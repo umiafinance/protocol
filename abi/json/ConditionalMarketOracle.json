@@ -1,0 +1,232 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "_hub",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "HUB",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IUmiaHub"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "calculateTWAP",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "twapX112",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve1",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tradingStart",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "tradingEnd",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "winningThresholdBps",
+        "type": "uint16",
+        "internalType": "uint16"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "oracleStates",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "price0CumulativeLast",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lastPrice0X112",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "tradingStart",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "tradingEnd",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "lastTimestamp",
+        "type": "uint32",
+        "internalType": "uint32"
+      },
+      {
+        "name": "initialized",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "update",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve0",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reserve1",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "event",
+    "name": "OracleInitialized",
+    "inputs": [
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "tradingStart",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "tradingEnd",
+        "type": "uint32",
+        "indexed": false,
+        "internalType": "uint32"
+      },
+      {
+        "name": "initialPriceX112",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "winningThresholdBps",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AlreadyInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidReserves",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidTradingWindow",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidWinningThreshold",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnlyMarketCore",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ProposalNotInitialized",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TradingNotStarted",
+    "inputs": []
+  }
+]

@@ -1,0 +1,171 @@
+[
+  {
+    "type": "function",
+    "name": "MAX_BUFFER_SIZE",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getInitializedTickData",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "ticks",
+        "type": "tuple[]",
+        "internalType": "struct TickWithData[]",
+        "components": [
+          {
+            "name": "priceQ96",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "currencyDemandQ96",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "requiredCurrencyDemandQ96",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "currencyRequiredQ96",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "multicall",
+    "inputs": [
+      {
+        "name": "data",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "revertWithState",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "state",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct AuctionState",
+        "components": [
+          {
+            "name": "checkpoint",
+            "type": "tuple",
+            "internalType": "struct Checkpoint",
+            "components": [
+              {
+                "name": "clearingPrice",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "currencyRaisedAtClearingPriceQ96X7",
+                "type": "uint256",
+                "internalType": "ValueX7"
+              },
+              {
+                "name": "cumulativeMpsPerPrice",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "cumulativeMps",
+                "type": "uint24",
+                "internalType": "uint24"
+              },
+              {
+                "name": "prev",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "next",
+                "type": "uint64",
+                "internalType": "uint64"
+              }
+            ]
+          },
+          {
+            "name": "currencyRaised",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "totalCleared",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "isGraduated",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "error",
+    "name": "CheckpointFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRevertReasonLength",
+    "inputs": []
+  }
+]

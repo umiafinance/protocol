@@ -1,0 +1,44 @@
+{
+  "lib/continuous-clearing-auction": {
+    "rev": "e3d43166514dd0a789d1afb144f816979aa23b87"
+  },
+  "lib/forge-std": {
+    "rev": "9aaeaf43602210beecf85137271a2f7c5c1f0975"
+  },
+  "lib/liquidity-launcher": {
+    "rev": "3a3103543f50a13a0ae52a253bb98a925d72146f"
+  },
+  "lib/metavest": {
+    "rev": "6cfa3b7707f0a9113fd392c25c16af9da2808cf2"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "239795bea728c8dca4deb6c66856dd58a6991112"
+  },
+  "lib/solady": {
+    "rev": "90db92ce173856605d24a554969f2c67cadbc7e9"
+  },
+  "lib/universal-router": {
+    "tag": {
+      "name": "2.1.1",
+      "rev": "999d561c3ad58fb5cab91b602911f3c75591a9c7"
+    }
+  },
+  "lib/v2-core": {
+    "tag": {
+      "name": "v1.0.1",
+      "rev": "4dd59067c76dea4a0e8e4bfdda41877a6b16dedc"
+    }
+  },
+  "lib/v3-core": {
+    "tag": {
+      "name": "v1.0.0",
+      "rev": "e3589b192d0be27e100cd0daaf6c97204fdb1899"
+    }
+  },
+  "lib/v4-core": {
+    "rev": "d153b048868a60c2403a3ef5b2301bb247884d46"
+  },
+  "lib/v4-periphery": {
+    "rev": "3779387e5d296f39df543d23524b050f89a62917"
+  }
+}
