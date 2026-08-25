@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+import {IGatedValidationHook} from "./IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "./IMaxBidPriceValidationHook.sol";
 
 /// @title IUmiaValidationHook
@@ -9,9 +10,10 @@ import {IMaxBidPriceValidationHook} from "./IMaxBidPriceValidationHook.sol";
 /// @dev Advertised via ERC165 `supportsInterface` alongside `IValidationHook` and `IERC165`.
 ///      Owner-only administration is deliberately left out: it is an ops surface, not something
 ///      a caller discovers, and keeping it out means routine admin changes cannot shift the
-///      interface ID that integrators key off. Inheriting `IMaxBidPriceValidationHook` does not
-///      move this ID either: Solidity excludes inherited selectors from `type().interfaceId`.
-interface IUmiaValidationHook is IMaxBidPriceValidationHook {
+///      interface ID that integrators key off. Inheriting `IMaxBidPriceValidationHook` and
+///      `IGatedValidationHook` does not move this ID either: Solidity excludes inherited
+///      selectors from `type().interfaceId`.
+interface IUmiaValidationHook is IMaxBidPriceValidationHook, IGatedValidationHook {
     /// @notice A cached auction step, as a half-open block range.
     struct BlockRange {
         uint64 startBlock; // inclusive

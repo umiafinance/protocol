@@ -32,8 +32,10 @@ Exported in the deploying shell (same env you use for `Deploy.s.sol`):
 - `CHAIN_ID` — the target chain's id (used in verification + artifact paths).
 - `ETHERSCAN_API_KEY` — block-explorer API key for the target chain's verifier
   (e.g. Basescan for Base chains, Etherscan for Ethereum).
-- `TWAP_WINDOW` — *optional*, seconds; defaults to `1800` (30 min). This is the
-  production window; only lower it for fast test schedules.
+- `TWAP_WINDOW` — *required*, seconds; no default. This is the condition's immutable
+  observation window (30 days = `2592000` on mainnet); only lower it for fast test
+  schedules. The deploy aborts without it so a forgotten value can't silently ship a
+  30-minute condition that never touches the coarse oracle ring.
 
 ## Step 1 — build
 
@@ -109,7 +111,7 @@ bun --filter @umia/chain build
 ## Step 6 — sanity checks
 
 ```bash
-# condition window matches TWAP_WINDOW (default 1800)
+# condition window matches the TWAP_WINDOW you deployed with
 cast call "$TWAP_MILESTONE_CONDITION" "twapWindow()(uint32)" --rpc-url "$RPC_URL"
 ```
 

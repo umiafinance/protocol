@@ -99,12 +99,12 @@ Privilege tiers:
 
 ## Oracle manipulation protections
 
-### Spot pool (UmiaLBP)
+### Spot pool (UmiaHook)
 
-- **Truncated TWAP**: Per-block tick movement capped at +/-9,116 ticks (~2.5x price change). Single-block flashloan attacks contribute a bounded amount to the TWAP.
-- **Full-range liquidity enforcement**: `beforeAddLiquidity` rejects any position that isn't full-range (`minUsableTick` to `maxUsableTick`). Concentrated liquidity would create zero-liquidity tick gaps exploitable for cheap tick manipulation.
-- **SpotMarketPriceGuard**: Standalone immutable contract that compares current spot tick against the TWAP tick over a configurable window. Used at market creation and settlement to reject operations during price manipulation. Fail-closed: if the oracle is active but cannot serve the full TWAP window (e.g. buffer exhausted by dust swaps), the guard reverts with `InsufficientOracleHistory` rather than silently allowing the operation. Only truly uninitialized oracles (pre-migration bootstrap) are allowed through.
-- **Oracle buffer sizing**: Migration initializes 250 observation slots (~5.5M gas). Combined with the fail-closed guard, buffer exhaustion blocks operations rather than bypassing them. Cardinality can be increased permissionlessly via `increaseCardinalityNext()` for additional resilience.
+- **Elapsed-time truncated TWAP**: The accepted tick slews toward the pool tick at no more than 4,558 ticks/second (9,116 ticks over a normal two-second Base block), with the ramp and recovery path integrated exactly. Extra writes cannot ratchet the filter faster, and a restored price recovers during quiet time instead of leaking a stale clamped tick across the gap.
+- **Operator-only, full-range liquidity enforcement**: `beforeAddLiquidity` and `beforeRemoveLiquidity` reject any caller other than the pool's registered operator (the venture's `SpotLiquidityVault`), and any position that isn't full-range (`minUsableTick` to `maxUsableTick`). Concentrated liquidity would create zero-liquidity tick gaps exploitable for cheap tick manipulation.
+- **Spot-vs-TWAP sandwich guard**: `SpotLiquidityVault._requireSpotWithinTwapDeviation` compares the current spot tick against the 30-minute TWAP tick (`TWAP_WINDOW`) and reverts with `SpotPriceDeviationTooHigh` beyond `MAX_TICK_DEVIATION` (1000 ticks, ~10.5%). It runs on deposits, withdrawals, decision-market creation, and settlement. Fail-closed: if the oracle holds fewer than 2 observations or cannot serve the full window (e.g. buffer exhausted by dust swaps), it reverts with `InsufficientOracleHistory` rather than silently allowing the operation. The only skip is an empty position (`currentLiquidity() == 0`), which has no reserves to sandwich and must stay open so a drained vault can be re-bootstrapped.
+- **Oracle buffer sizing**: `afterInitialize` seeds cardinality 1 and `bootstrapFromLBP` grows it to 100 slots. At one observation per block that covers only ~200s on Base, short of the 30-minute window, so busy pools should be grown to at least 1,000 slots via the permissionless `increaseCardinalityNext()`. Combined with the fail-closed guard, buffer exhaustion blocks operations rather than bypassing them. See [SPOT_ORACLE.md](SPOT_ORACLE.md).
 
 ### Decision markets (ConditionalMarketOracle)
 

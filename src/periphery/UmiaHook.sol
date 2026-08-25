@@ -31,6 +31,8 @@ interface IUmiaLBPFactoryView {
 ///      V4-natively inside the operator's position — so the pool presents a vanilla swap
 ///      surface to external routers.
 ///
+///      Two oracle rings, per-block (`observe`) and coarse (`observeLong`); see docs/SPOT_ORACLE.md.
+///
 ///      Per-pool configuration (venture, operator, oracle observations) lives in mappings
 ///      keyed by `PoolId`. Registration is one-shot per pool and gated to addresses produced
 ///      by the canonical `UmiaLBPFactory` via its `isLBP` map.
@@ -77,6 +79,18 @@ contract UmiaHook is IHooks, IUmiaHook {
 
     /// @notice Backing storage for `SpotMarketOracle`'s 65535-slot observation ring buffer.
     mapping(PoolId => SpotMarketOracle.Observation[65535]) internal observations;
+
+    /// @notice Sampling interval of the coarse oracle ring: at most one observation per bucket.
+    uint32 public constant COARSE_INTERVAL = 1 hours;
+
+    /// @notice Ring-buffer cursor for the coarse oracle of each pool.
+    mapping(PoolId => ObservationState) public coarseOracleStates;
+
+    mapping(PoolId => SpotMarketOracle.Observation[65535]) internal coarseObservations;
+
+    /// @dev Per-pool fractional tick-area numerator carried between fine-ring writes.
+    ///      Kept outside `ObservationState` so its public getter ABI remains unchanged.
+    mapping(PoolId => uint16) internal tickAreaRemainders;
 
     // ─────────────────────────────────────────────────────────
     // Modifiers
@@ -192,7 +206,7 @@ contract UmiaHook is IHooks, IUmiaHook {
         return IHooks.beforeInitialize.selector;
     }
 
-    /// @notice Seed the spot-market oracle on first initialization.
+    /// @notice Seed both spot-market oracle rings on first initialization.
     /// @dev Idempotent: a second initialize with the same PoolId is a no-op because
     ///      `oracleStates[id].cardinality` only equals zero before the first seed.
     function afterInitialize(address, PoolKey calldata key, uint160, int24 tick)
@@ -204,6 +218,8 @@ contract UmiaHook is IHooks, IUmiaHook {
         if (oracleStates[id].cardinality == 0) {
             (oracleStates[id].cardinality, oracleStates[id].cardinalityNext) =
                 observations[id].initialize(uint32(block.timestamp), tick);
+            (coarseOracleStates[id].cardinality, coarseOracleStates[id].cardinalityNext) =
+                coarseObservations[id].initialize(uint32(block.timestamp), tick);
         }
         return IHooks.afterInitialize.selector;
     }
@@ -343,11 +359,54 @@ contract UmiaHook is IHooks, IUmiaHook {
         PoolId id = key.toId();
         ObservationState memory state = oracleStates[id];
         (, int24 tick,,) = poolManager.getSlot0(id);
+        return observations[id].observe(
+            uint32(block.timestamp),
+            secondsAgos,
+            tick,
+            state.index,
+            poolManager.getLiquidity(id),
+            state.cardinality,
+            tickAreaRemainders[id]
+        );
+    }
+
+    /// @notice `observe` for month-scale lookbacks: coarse ring, except targets newer than the
+    ///         newest coarse checkpoint, served from the per-block ring so a live-tick move gets
+    ///         one block of extrapolation weight, not the open bucket's elapsed hour.
+    function observeLong(PoolKey calldata key, uint32[] calldata secondsAgos)
+        external
+        view
+        returns (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s)
+    {
+        PoolId id = key.toId();
+        ObservationState memory fine = oracleStates[id];
+        ObservationState memory coarse = coarseOracleStates[id];
+        if (fine.cardinality == 0 || coarse.cardinality == 0) {
+            revert SpotMarketOracle.OracleCardinalityCannotBeZero();
+        }
+
+        (, int24 tick,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
-        return
-            observations[id].observe(
-                uint32(block.timestamp), secondsAgos, tick, state.index, liquidity, state.cardinality
-            );
+        uint32 time = uint32(block.timestamp);
+        uint32 newestCoarseAge;
+        unchecked {
+            newestCoarseAge = time - coarseObservations[id][coarse.index].blockTimestamp;
+        }
+
+        uint256 n = secondsAgos.length;
+        tickCumulatives = new int48[](n);
+        secondsPerLiquidityCumulativeX128s = new uint144[](n);
+        for (uint256 i = 0; i < n; i++) {
+            if (secondsAgos[i] < newestCoarseAge) {
+                (tickCumulatives[i], secondsPerLiquidityCumulativeX128s[i]) = observations[id].observeSingle(
+                    time, secondsAgos[i], tick, fine.index, liquidity, fine.cardinality, tickAreaRemainders[id]
+                );
+            } else {
+                (tickCumulatives[i], secondsPerLiquidityCumulativeX128s[i]) = coarseObservations[id].observeSingle(
+                    time, secondsAgos[i], tick, coarse.index, liquidity, coarse.cardinality, 0
+                );
+            }
+        }
     }
 
     /// @notice Direct read of a single observation slot. Intended for tests, indexers, and
@@ -364,8 +423,21 @@ contract UmiaHook is IHooks, IUmiaHook {
             bool initialized
         )
     {
-        SpotMarketOracle.Observation memory obs = observations[id][index];
-        return (obs.blockTimestamp, obs.tickCumulative, obs.secondsPerLiquidityCumulativeX128, obs.initialized);
+        return _observationAt(observations[id], index);
+    }
+
+    /// @notice Direct read of a single coarse-ring observation slot.
+    function getCoarseObservation(PoolId id, uint16 index)
+        external
+        view
+        returns (
+            uint32 blockTimestamp,
+            int48 tickCumulative,
+            uint144 secondsPerLiquidityCumulativeX128,
+            bool initialized
+        )
+    {
+        return _observationAt(coarseObservations[id], index);
     }
 
     /// @notice Permissionless grow of the observation ring buffer's effective capacity.
@@ -379,25 +451,66 @@ contract UmiaHook is IHooks, IUmiaHook {
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
     {
         PoolId id = key.toId();
-        ObservationState storage state = oracleStates[id];
-        cardinalityNextOld = state.cardinalityNext;
-        cardinalityNextNew = observations[id].grow(cardinalityNextOld, cardinalityNext);
-        state.cardinalityNext = cardinalityNextNew;
+        return _grow(observations[id], oracleStates[id], cardinalityNext);
+    }
+
+    /// @notice Permissionless grow of the coarse ring buffer's effective capacity.
+    function increaseCoarseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
+        external
+        returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew)
+    {
+        PoolId id = key.toId();
+        return _grow(coarseObservations[id], coarseOracleStates[id], cardinalityNext);
     }
 
     // ─────────────────────────────────────────────────────────
     // Internal Helpers
     // ─────────────────────────────────────────────────────────
 
-    /// @dev Write an oracle observation using the current pool state read via `StateLibrary`.
-    ///      Called from `beforeAddLiquidity`, `beforeRemoveLiquidity`, and `beforeSwap`.
+    /// @dev Ring-agnostic slot read backing `getObservation`/`getCoarseObservation`.
+    function _observationAt(SpotMarketOracle.Observation[65535] storage ring, uint16 index)
+        private
+        view
+        returns (uint32, int48, uint144, bool)
+    {
+        SpotMarketOracle.Observation memory obs = ring[index];
+        return (obs.blockTimestamp, obs.tickCumulative, obs.secondsPerLiquidityCumulativeX128, obs.initialized);
+    }
+
+    /// @dev Ring-agnostic grow backing `increaseCardinalityNext`/`increaseCoarseCardinalityNext`.
+    function _grow(SpotMarketOracle.Observation[65535] storage ring, ObservationState storage state, uint16 next)
+        private
+        returns (uint16 old, uint16 updated)
+    {
+        old = state.cardinalityNext;
+        updated = ring.grow(old, next);
+        state.cardinalityNext = updated;
+    }
+
     function _writeObservation(PoolKey calldata key) internal {
         PoolId id = key.toId();
         ObservationState storage state = oracleStates[id];
         (, int24 tick,,) = poolManager.getSlot0(id);
         uint128 liquidity = poolManager.getLiquidity(id);
-        (state.index, state.cardinality) = observations[id].write(
-            state.index, uint32(block.timestamp), tick, liquidity, state.cardinality, state.cardinalityNext
+        uint16 tickAreaRemainder = tickAreaRemainders[id];
+        (state.index, state.cardinality, tickAreaRemainder) = observations[id].write(
+            state.index,
+            uint32(block.timestamp),
+            tick,
+            liquidity,
+            state.cardinality,
+            state.cardinalityNext,
+            tickAreaRemainder
         );
+        tickAreaRemainders[id] = tickAreaRemainder;
+
+        ObservationState storage coarseState = coarseOracleStates[id];
+        uint32 lastCoarseTs = coarseObservations[id][coarseState.index].blockTimestamp;
+        if (lastCoarseTs / COARSE_INTERVAL != uint32(block.timestamp) / COARSE_INTERVAL) {
+            // Snapshot the per-block cumulative, not a resampled tick (must not be `write`).
+            (coarseState.index, coarseState.cardinality) = coarseObservations[id].writeSnapshot(
+                coarseState.index, observations[id][state.index], coarseState.cardinality, coarseState.cardinalityNext
+            );
+        }
     }
 }

@@ -259,7 +259,6 @@ After broadcast, confirm that the hub points at the freshly deployed contracts a
 cast call "$UMIA_HUB_ADDRESS" "umiaMarketCore()(address)" --rpc-url "$RPC_URL"
 cast call "$UMIA_HUB_ADDRESS" "defaultGovernanceExecutor()(address)" --rpc-url "$RPC_URL"
 cast call "$UMIA_HUB_ADDRESS" "conditionalMarketOracle()(address)" --rpc-url "$RPC_URL"
-cast call "$UMIA_HUB_ADDRESS" "spotMarketPriceGuard()(address)" --rpc-url "$RPC_URL"
 cast call "$UMIA_HUB_ADDRESS" "lbpStrategyFactory()(address)" --rpc-url "$RPC_URL"
 cast call "$UMIA_HUB_ADDRESS" "ccaFactory()(address)" --rpc-url "$RPC_URL"
 cast call "$UMIA_HUB_ADDRESS" "marketCreationSigner()(address)" --rpc-url "$RPC_URL"
@@ -297,7 +296,6 @@ Example (deploying to a new chain `monad-testnet` in the testnet environment):
         "hub": "0x...",
         "marketCore": "0x...",
         "conditionalMarketOracle": "0x...",
-        "spotMarketPriceGuard": "0x...",
         "ccaFactory": "0x...",
         "auctionStateLens": "0x...",
         "umiaHook": "0xCC...",

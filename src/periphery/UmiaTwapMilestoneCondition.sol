@@ -108,12 +108,8 @@ contract UmiaTwapMilestoneCondition is IUmiaTwapMilestoneCondition {
         secondsAgos[0] = TWAP_WINDOW;
         secondsAgos[1] = 0;
 
-        int48[] memory tickCumulatives;
-        try hook.observe(key, secondsAgos) returns (int48[] memory _tickCumulatives, uint144[] memory) {
-            tickCumulatives = _tickCumulatives;
-        } catch {
-            revert OracleNotReady();
-        }
+        int48[] memory tickCumulatives =
+            _readCumulatives(hook, key, secondsAgos, TWAP_WINDOW >= 2 * hook.COARSE_INTERVAL());
 
         int24 twapTick = TwapMath.averageTick(tickCumulatives[0], tickCumulatives[1], TWAP_WINDOW);
         uint160 sqrtPriceX96 = TickMath.getSqrtPriceAtTick(twapTick);
@@ -129,5 +125,24 @@ contract UmiaTwapMilestoneCondition is IUmiaTwapMilestoneCondition {
         // Thresholds are uint160; a price past that ceiling already clears every representable
         // threshold, so cap rather than silently truncating the high bits of the comparison.
         return priceX96 > type(uint160).max ? type(uint160).max : uint160(priceX96);
+    }
+
+    function _readCumulatives(IUmiaHook hook, PoolKey memory key, uint32[] memory secondsAgos, bool useLong)
+        private
+        view
+        returns (int48[] memory tickCumulatives)
+    {
+        if (useLong) {
+            try hook.observeLong(key, secondsAgos) returns (int48[] memory t, uint144[] memory) {
+                return t;
+            } catch {
+                revert OracleNotReady();
+            }
+        }
+        try hook.observe(key, secondsAgos) returns (int48[] memory t, uint144[] memory) {
+            return t;
+        } catch {
+            revert OracleNotReady();
+        }
     }
 }

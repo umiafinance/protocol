@@ -24,13 +24,19 @@ library SpotMarketOracle {
     /// @param targetTimestamp Invalid timestamp targeted to be observed
     error TargetPredatesOldestObservation(uint32 oldestTimestamp, uint32 targetTimestamp);
 
-    /// @notice This is the max amount of ticks in either direction that the pool is allowed to move at one time
-    int24 constant MAX_ABS_TICK_MOVE = 9116;
+    /// @notice Maximum rate at which the oracle's accepted tick can approach the pool tick.
+    /// @dev 4,558 ticks/second preserves the former 9,116-tick allowance over a 2-second Base block,
+    ///      while making the bound depend on elapsed time rather than the number of observations.
+    uint24 constant MAX_TICK_SLEW_PER_SECOND = 4558;
+
+    /// @dev Tick-area values are carried at this scale so a linear ramp can be integrated exactly
+    ///      across any partitioning of the same time interval.
+    uint24 constant TICK_AREA_SCALE = 2 * MAX_TICK_SLEW_PER_SECOND;
 
     struct Observation {
         // the block timestamp of the observation
         uint32 blockTimestamp;
-        // the previous printed tick to calculate the change from time to time
+        // the previous accepted tick from which the slew-limited path continues
         int24 prevTick;
         // the tick accumulator, i.e. tick * time elapsed since the pool was first initialized
         int48 tickCumulative;
@@ -40,37 +46,75 @@ library SpotMarketOracle {
         bool initialized;
     }
 
-    /// @notice Transforms a previous observation into a new observation, given the passage of time and the current tick and liquidity values
+    /// @notice Advances the accepted tick toward the pool tick and integrates its continuous path.
+    /// @dev The accepted tick moves linearly at `MAX_TICK_SLEW_PER_SECOND` until it reaches `tick`,
+    ///      then remains there for the rest of the interval. `tickAreaRemainder` carries the exact
+    ///      fractional tick-seconds between writes, making the result independent of write cadence.
     /// @dev blockTimestamp _must_ be chronologically equal to or greater than last.blockTimestamp, safe for 0 or 1 overflows
     /// @param last The specified observation to be transformed
     /// @param blockTimestamp The timestamp of the new observation
     /// @param tick The active tick at the time of the new observation
     /// @param liquidity The total in-range liquidity at the time of the new observation
-    /// @return Observation The newly populated observation
-    function transform(Observation memory last, uint32 blockTimestamp, int24 tick, uint128 liquidity)
-        private
-        pure
-        returns (Observation memory)
-    {
+    /// @param tickAreaRemainder Non-negative numerator left over from the previous tick-area division
+    /// @return next The newly populated observation
+    /// @return tickAreaRemainderUpdated Non-negative numerator to carry into the next transformation
+    function transform(
+        Observation memory last,
+        uint32 blockTimestamp,
+        int24 tick,
+        uint128 liquidity,
+        uint16 tickAreaRemainder
+    ) private pure returns (Observation memory next, uint16 tickAreaRemainderUpdated) {
         unchecked {
             uint32 delta = blockTimestamp - last.blockTimestamp;
+            int48 tickCumulativeDelta;
+            (tick, tickCumulativeDelta, tickAreaRemainderUpdated) =
+                advanceTick(last.prevTick, tick, delta, tickAreaRemainder);
 
-            // if the current tick moves more than the max abs tick movement
-            // then we truncate it down
-            if ((tick - last.prevTick) > MAX_ABS_TICK_MOVE) {
-                tick = last.prevTick + MAX_ABS_TICK_MOVE;
-            } else if ((tick - last.prevTick) < -MAX_ABS_TICK_MOVE) {
-                tick = last.prevTick - MAX_ABS_TICK_MOVE;
-            }
-
-            return Observation({
+            next = Observation({
                 blockTimestamp: blockTimestamp,
                 prevTick: tick,
-                tickCumulative: last.tickCumulative + int48(tick) * int48(uint48(delta)),
+                tickCumulative: last.tickCumulative + tickCumulativeDelta,
                 secondsPerLiquidityCumulativeX128: last.secondsPerLiquidityCumulativeX128
                     + ((uint144(delta) << 128) / (liquidity > 0 ? liquidity : 1)),
                 initialized: true
             });
+        }
+    }
+
+    /// @dev Integrates a linear slew followed by a hold, returning whole tick-seconds plus carry.
+    ///      The scaled area is `(start + end) * travel + 2 * end * (rate * dt - travel)`.
+    function advanceTick(int24 previousTick, int24 targetTick, uint32 delta, uint16 tickAreaRemainder)
+        private
+        pure
+        returns (int24 nextTick, int48 tickCumulativeDelta, uint16 tickAreaRemainderUpdated)
+    {
+        unchecked {
+            int256 tickDelta = int256(targetTick) - int256(previousTick);
+            uint256 distance = uint256(tickDelta < 0 ? -tickDelta : tickDelta);
+            uint256 travelBudget = uint256(MAX_TICK_SLEW_PER_SECOND) * delta;
+            uint256 travel = distance < travelBudget ? distance : travelBudget;
+
+            int256 next = int256(previousTick);
+            if (tickDelta > 0) next += int256(travel);
+            else if (tickDelta < 0) next -= int256(travel);
+
+            int256 tickAreaNumerator = (int256(previousTick) + next) * int256(travel) + 2 * next
+                * int256(travelBudget - travel) + int256(uint256(tickAreaRemainder));
+
+            int256 scale = int256(uint256(TICK_AREA_SCALE));
+            int256 wholeTickArea = tickAreaNumerator / scale;
+            int256 remainder = tickAreaNumerator % scale;
+            // Solidity truncates signed division toward zero. Convert it to floor division so the
+            // remainder is canonical in [0, scale), even when the accumulated path crosses zero.
+            if (remainder < 0) {
+                wholeTickArea--;
+                remainder += scale;
+            }
+
+            nextTick = int24(next);
+            tickCumulativeDelta = int48(wholeTickArea);
+            tickAreaRemainderUpdated = uint16(uint256(remainder));
         }
     }
 
@@ -104,8 +148,10 @@ library SpotMarketOracle {
     /// @param liquidity The total in-range liquidity at the time of the new observation
     /// @param cardinality The number of populated elements in the oracle array
     /// @param cardinalityNext The new length of the oracle array, independent of population
+    /// @param tickAreaRemainder Fractional tick-area numerator carried from the previous write
     /// @return indexUpdated The new index of the most recently written element in the oracle array
     /// @return cardinalityUpdated The new cardinality of the oracle array
+    /// @return tickAreaRemainderUpdated Fractional tick-area numerator for the next write
     function write(
         Observation[65535] storage self,
         uint16 index,
@@ -113,13 +159,14 @@ library SpotMarketOracle {
         int24 tick,
         uint128 liquidity,
         uint16 cardinality,
-        uint16 cardinalityNext
-    ) internal returns (uint16 indexUpdated, uint16 cardinalityUpdated) {
+        uint16 cardinalityNext,
+        uint16 tickAreaRemainder
+    ) internal returns (uint16 indexUpdated, uint16 cardinalityUpdated, uint16 tickAreaRemainderUpdated) {
         unchecked {
             Observation memory last = self[index];
 
             // early return if we've already written an observation this block
-            if (last.blockTimestamp == blockTimestamp) return (index, cardinality);
+            if (last.blockTimestamp == blockTimestamp) return (index, cardinality, tickAreaRemainder);
 
             // if the conditions are right, we can bump the cardinality
             if (cardinalityNext > cardinality && index == (cardinality - 1)) {
@@ -129,7 +176,36 @@ library SpotMarketOracle {
             }
 
             indexUpdated = (index + 1) % cardinalityUpdated;
-            self[indexUpdated] = transform(last, blockTimestamp, tick, liquidity);
+            (self[indexUpdated], tickAreaRemainderUpdated) =
+                transform(last, blockTimestamp, tick, liquidity, tickAreaRemainder);
+        }
+    }
+
+    /// @notice Stores a pre-computed observation verbatim at the next slot (unlike `write`, which
+    ///         transforms). Used to downsample a denser ring's cumulative. Indexing mirrors `write`.
+    /// @dev The verbatim copy carries `prevTick` from the source observation. Coarse-ring reads never
+    ///      extrapolate (`UmiaHook.observeLong` routes targets newer than the newest checkpoint to the
+    ///      fine ring), so it goes unused; keep the copy intact in case a future read path transforms.
+    function writeSnapshot(
+        Observation[65535] storage self,
+        uint16 index,
+        Observation memory snapshot,
+        uint16 cardinality,
+        uint16 cardinalityNext
+    ) internal returns (uint16 indexUpdated, uint16 cardinalityUpdated) {
+        unchecked {
+            // Defense-in-depth for future callers: unreachable from the hook, whose bucket
+            // gate already guarantees a fresh timestamp. Mirrors write's per-block dedup.
+            if (self[index].blockTimestamp == snapshot.blockTimestamp) return (index, cardinality);
+
+            if (cardinalityNext > cardinality && index == (cardinality - 1)) {
+                cardinalityUpdated = cardinalityNext;
+            } else {
+                cardinalityUpdated = cardinality;
+            }
+
+            indexUpdated = (index + 1) % cardinalityUpdated;
+            self[indexUpdated] = snapshot;
         }
     }
 
@@ -224,6 +300,7 @@ library SpotMarketOracle {
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param liquidity The total pool liquidity at the time of the call
     /// @param cardinality The number of populated elements in the oracle array
+    /// @param tickAreaRemainder Fractional tick-area numerator carried by the newest observation
     /// @return beforeOrAt The observation which occurred at, or before, the given timestamp
     /// @return atOrAfter The observation which occurred at, or after, the given timestamp
     function getSurroundingObservations(
@@ -233,7 +310,8 @@ library SpotMarketOracle {
         int24 tick,
         uint16 index,
         uint128 liquidity,
-        uint16 cardinality
+        uint16 cardinality,
+        uint16 tickAreaRemainder
     ) private view returns (Observation memory beforeOrAt, Observation memory atOrAfter) {
         unchecked {
             // optimistically set before to the newest observation
@@ -246,7 +324,9 @@ library SpotMarketOracle {
                     return (beforeOrAt, atOrAfter);
                 } else {
                     // otherwise, we need to transform
-                    return (beforeOrAt, transform(beforeOrAt, target, tick, liquidity));
+                    (Observation memory transformed,) =
+                        transform(beforeOrAt, target, tick, liquidity, tickAreaRemainder);
+                    return (beforeOrAt, transformed);
                 }
             }
 
@@ -275,6 +355,7 @@ library SpotMarketOracle {
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param liquidity The current in-range pool liquidity
     /// @param cardinality The number of populated elements in the oracle array
+    /// @param tickAreaRemainder Fractional tick-area numerator carried by the newest observation
     /// @return tickCumulative The tick * time elapsed since the pool was first initialized, as of `secondsAgo`
     /// @return secondsPerLiquidityCumulativeX128 The time elapsed / max(1, liquidity) since the pool was first initialized, as of `secondsAgo`
     function observeSingle(
@@ -284,19 +365,22 @@ library SpotMarketOracle {
         int24 tick,
         uint16 index,
         uint128 liquidity,
-        uint16 cardinality
+        uint16 cardinality,
+        uint16 tickAreaRemainder
     ) internal view returns (int48 tickCumulative, uint144 secondsPerLiquidityCumulativeX128) {
         unchecked {
             if (secondsAgo == 0) {
                 Observation memory last = self[index];
-                if (last.blockTimestamp != time) last = transform(last, time, tick, liquidity);
+                if (last.blockTimestamp != time) {
+                    (last,) = transform(last, time, tick, liquidity, tickAreaRemainder);
+                }
                 return (last.tickCumulative, last.secondsPerLiquidityCumulativeX128);
             }
 
             uint32 target = time - secondsAgo;
 
             (Observation memory beforeOrAt, Observation memory atOrAfter) =
-                getSurroundingObservations(self, time, target, tick, index, liquidity, cardinality);
+                getSurroundingObservations(self, time, target, tick, index, liquidity, cardinality, tickAreaRemainder);
 
             if (target == beforeOrAt.blockTimestamp) {
                 // we're at the left boundary
@@ -334,6 +418,7 @@ library SpotMarketOracle {
     /// @param index The index of the observation that was most recently written to the observations array
     /// @param liquidity The current in-range pool liquidity
     /// @param cardinality The number of populated elements in the oracle array
+    /// @param tickAreaRemainder Fractional tick-area numerator carried by the newest observation
     /// @return tickCumulatives The tick * time elapsed since the pool was first initialized, as of each `secondsAgo`
     /// @return secondsPerLiquidityCumulativeX128s The cumulative seconds / max(1, liquidity) since the pool was first initialized, as of each `secondsAgo`
     function observe(
@@ -343,7 +428,8 @@ library SpotMarketOracle {
         int24 tick,
         uint16 index,
         uint128 liquidity,
-        uint16 cardinality
+        uint16 cardinality,
+        uint16 tickAreaRemainder
     ) internal view returns (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s) {
         unchecked {
             if (cardinality == 0) revert OracleCardinalityCannotBeZero();
@@ -352,7 +438,7 @@ library SpotMarketOracle {
             secondsPerLiquidityCumulativeX128s = new uint144[](secondsAgos.length);
             for (uint256 i = 0; i < secondsAgos.length; i++) {
                 (tickCumulatives[i], secondsPerLiquidityCumulativeX128s[i]) =
-                    observeSingle(self, time, secondsAgos[i], tick, index, liquidity, cardinality);
+                    observeSingle(self, time, secondsAgos[i], tick, index, liquidity, cardinality, tickAreaRemainder);
             }
         }
     }

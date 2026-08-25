@@ -2,16 +2,25 @@
 
 ## Overview
 
-Umia integrates a time-weighted average price (TWAP) oracle directly into `UmiaLBP`, the Uniswap V4 hook that manages every Venture's spot pool. The oracle records price observations on every swap and liquidity change, enabling any onchain or off-chain consumer to query manipulation-resistant TWAPs over arbitrary time windows.
+Umia integrates a time-weighted average price (TWAP) oracle into `UmiaHook`, the oracle-only Uniswap V4 hook attached to every Venture's spot pool. One hook instance serves all spot pools on a chain, keyed by `PoolId`. The oracle records price observations on every swap and liquidity change, so any onchain or off-chain consumer can query manipulation-resistant TWAPs.
 
-Two primary consumers exist today:
+The oracle is **dual-cadence**: each pool carries two independent observation rings written from the same hook callbacks.
 
-| Consumer            | Window                           | Purpose                                                                                                                          |
-| ------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| **MarketCore**   | 4 hours                          | Rejects market creation if spot price deviates >5% from the 4h TWAP, preventing sandwich attacks on decision market start prices |
-| **UmiaTwapMilestoneCondition** | Configurable (typically 30 days) | Gates a MetaVesT vesting milestone on the full-window TWAP. The price threshold it compares against is resolved live from the venture's `VentureVestingAuthority` (absolute, or `multiple × clearingPrice`), not stored or finalized on the condition. Reverts if oracle history is insufficient (fail-closed). |
+| Ring          | Write cadence                       | Read entrypoint | Serves                                              |
+| ------------- | ----------------------------------- | --------------- | --------------------------------------------------- |
+| **Per-block** | At most once per block              | `observe`       | Short windows (minutes to hours)                    |
+| **Coarse**    | At most once per hour (`COARSE_INTERVAL`) | `observeLong`   | Month-scale windows, at any trade volume            |
 
-Both use the same oracle. The window is a query-time parameter, not a configuration.
+The split exists because ring capacity is hard-capped at 65,535 slots (`uint16`). On Base (2s blocks) a pool touched every block wraps the per-block ring in ~36 hours, so a 30-day lookback can never survive on it. The coarse ring's span is governed by cadence, not block frequency: ~744 hourly slots cover a full month regardless of how hard the pool trades.
+
+Two consumers exist today:
+
+| Consumer                       | Window                                       | Ring | Purpose                                                                                                                                                                                                                                                                                                       |
+| ------------------------------ | -------------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **SpotLiquidityVault**         | 30 minutes (`TWAP_WINDOW`)                   | Per-block (`observe`) | Sandwich guard. Reverts if the spot tick deviates from the 30-minute TWAP tick by more than `MAX_TICK_DEVIATION` (1000 ticks, roughly 10.5%). Runs on `deposit`, `withdraw`, `pullForDecisionMarket` (decision-market creation) and `returnFromDecisionMarket` (settlement).                                       |
+| **UmiaTwapMilestoneCondition** | Configurable at construction (mainnet: 30 days) | Selected by window | Gates a MetaVesT vesting milestone on the full-window TWAP. Reads the coarse ring (`observeLong`) for windows ≥ 2 × `COARSE_INTERVAL` (the 30-day mainnet gate) and the per-block ring (`observe`) for shorter windows, which an hourly ring cannot average. Threshold resolved live from `VentureVestingAuthority`. Fail-closed. |
+
+Within each ring the window is a query-time parameter, not a configuration.
 
 ## How It Works
 
@@ -19,13 +28,13 @@ Both use the same oracle. The window is a query-time parameter, not a configurat
 
 Each pool has a circular buffer of up to 65,535 **observations**. An observation records:
 
-```
+```solidity
 struct Observation {
-    uint32  blockTimestamp                      // when this observation was written
-    int24   prevTick                            // the tick at time of writing
-    int48   tickCumulative                      // cumulative sum of (tick * seconds elapsed)
-    uint144 secondsPerLiquidityCumulativeX128   // cumulative seconds / liquidity
-    bool    initialized                         // whether this slot has been written
+    uint32  blockTimestamp;                      // when this observation was written
+    int24   prevTick;                            // the tick at time of writing
+    int48   tickCumulative;                      // cumulative sum of (tick * seconds elapsed)
+    uint144 secondsPerLiquidityCumulativeX128;   // cumulative seconds / liquidity
+    bool    initialized;                         // whether this slot has been written
 }
 ```
 
@@ -35,26 +44,39 @@ The `tickCumulative` field is the key to TWAP computation. Each time an observat
 twapTick = (tickCumulative[now] - tickCumulative[then]) / (now - then)
 ```
 
-This is a **geometric mean** TWAP (since ticks are logarithmic), which is more robust against manipulation than arithmetic mean.
+This is a **geometric mean** TWAP (since ticks are logarithmic), which is more robust against manipulation than an arithmetic mean.
 
 ### When Observations Are Written
 
-UmiaLBP writes an observation in two hook callbacks:
+`UmiaHook` writes an observation in three hook callbacks, each capturing the tick *before* the event executes:
 
-- **`beforeSwap`** — captures the tick *before* the swap executes. This is the standard oracle pattern.
-- **`beforeAddLiquidity`** — ensures the oracle is current before liquidity changes affect the `secondsPerLiquidityCumulative` accumulator.
+- **`beforeSwap`** the standard oracle pattern.
+- **`beforeAddLiquidity`** keeps the oracle current before liquidity changes affect the `secondsPerLiquidityCumulative` accumulator.
+- **`beforeRemoveLiquidity`** same, for removals.
 
 At most one observation is written per block. If multiple swaps happen in the same block, the first one writes and subsequent ones are no-ops.
 
+The **coarse ring** is not written independently. On the first event of each `COARSE_INTERVAL` (1 hour) bucket, `_writeObservation` checkpoints the per-block ring's freshly written observation into the coarse ring via `SpotMarketOracle.writeSnapshot`. The coarse ring is therefore a downsample of the per-block ring's already-time-weighted cumulative: it inherits the per-block time resolution, so a transient spike contributes only its fine-ring integral (including its bounded slew/recovery tail), never a whole interval (see [Security](#security-properties)). A bucket with no trades records nothing; quiet stretches are reconstructed by `observe`'s slew-aware extrapolation (≤1h fuzz on a window endpoint, ~0.14% of a 30-day window).
+
+Coarse writes are a byproduct of trading — no cranker. The one-time grow of each ring to its full span is done by the keeper's `grow-oracle` cron, the same way the per-block ring is grown.
+
 ### Initialization
 
-The oracle is initialized during `migrate()`, not during pool initialization. This is because Uniswap V4's `noSelfCall` modifier silently skips hook callbacks when the hook calls the PoolManager on itself. Since UmiaLBP uses the `SelfInitializerHook` pattern (the hook initializes its own pool), the `afterInitialize` callback is never triggered. Instead, `_initializeOracle()` is called directly in `migrate()` after pool creation. Migration also grows the oracle buffer to 250 slots to provide initial TWAP coverage (see Buffer Sizing below).
+`afterInitialize` seeds both rings at cardinality 1 when the pool is first initialized. The seed is idempotent: a second initialize for the same `PoolId` is a no-op because `oracleStates[id].cardinality` is only zero before the first seed (the rings are always seeded together, so the per-block cardinality gates both).
 
-### Truncation
+Cardinality 1 is not enough to serve any TWAP window (see [Fail-closed behavior](#fail-closed-behavior)), so `SpotLiquidityVault.bootstrapFromLBP` seeds both rings to **100 slots** (`increaseCardinalityNext` / `increaseCoarseCardinalityNext`). The seed is kept small so its cold SSTOREs fit alongside pool init under Base's 2^24 per-transaction gas cap. The keeper's `grow-oracle` cron then chunk-grows each ring to its target — per-block 1000, coarse 768 — one 300-slot chunk per tick, exactly as it already does the per-block ring.
 
-The oracle uses a **truncated** variant that caps tick movement to +/-9,116 ticks per block (`MAX_ABS_TICK_MOVE`). If the tick moves more than this threshold between observations, the recorded value is clamped. This bounds the impact of single-block price manipulation (e.g., flashloan attacks) on the TWAP, regardless of pool liquidity depth.
+The coarse seed is not time-critical: cardinality above 1 preserves the seed observation, the first post-seed write is a full interval out, and 100 slots take days to wrap, so the cron reaches 768 long before any history is evicted. Anyone can also grow either ring permissionlessly.
 
-9,116 ticks corresponds to roughly a 2.5x price change in a single block — far beyond any legitimate price movement.
+### Elapsed-time truncation
+
+The oracle's accepted tick can approach the raw pool tick at no more than **4,558 ticks per elapsed second** (`MAX_TICK_SLEW_PER_SECOND`). Over a normal two-second Base block this permits the same 9,116-tick move as the former per-observation clamp (roughly a 2.5x price change), but the allowance now depends on time rather than on how many observations an attacker can trigger.
+
+Each update integrates the accepted tick's continuous path: it ramps linearly toward the raw tick at the maximum rate, then holds the raw tick for any time left in the interval. If a burst moves the accepted tick away from reality and the pool is restored, the next update likewise integrates only the short recovery ramp and the honest remainder of the quiet interval. It cannot clamp down by one step and mistakenly credit that stale endpoint across the entire hour.
+
+The linear-ramp area has a denominator of 9,116. A per-pool remainder carries the fractional numerator between writes using floor division, so splitting one constant price path across many updates produces exactly the same accepted endpoint and cumulative as one sparse update. This prevents observation-count ratcheting and rounding drift.
+
+Because the coarse ring copies the per-block cumulative rather than integrating a sampled tick (see [When Observations Are Written](#when-observations-are-written)), it inherits the elapsed-time bound and the fine-ring time resolution. There is no separate per-hour clamp and no boundary-resample amplification.
 
 ## Querying the Oracle
 
@@ -64,113 +86,119 @@ Returns cumulative tick and liquidity values at each requested point in the past
 
 ```solidity
 uint32[] memory secondsAgos = new uint32[](2);
-secondsAgos[0] = 14400; // 4 hours ago
-secondsAgos[1] = 0;     // now
+secondsAgos[0] = 1800; // 30 minutes ago
+secondsAgos[1] = 0;    // now
 
-(int48[] memory tickCumulatives, ) = lbp.observe(key, secondsAgos);
+(int48[] memory tickCumulatives, ) = hook.observe(key, secondsAgos);
 
-int24 twapTick = int24(
-    (tickCumulatives[1] - tickCumulatives[0]) / int48(14400)
-);
+int24 twapTick = TwapMath.averageTick(tickCumulatives[0], tickCumulatives[1], 1800);
 
 // Convert tick to price if needed:
 uint160 twapSqrtPriceX96 = TickMath.getSqrtPriceAtTick(twapTick);
 ```
 
-Any window length works — 1 minute, 4 hours, 30 days — as long as the buffer contains observations spanning that period.
+Use `TwapMath.averageTick` rather than dividing by hand: Solidity division truncates toward zero, which biases a negative average upward.
 
-Reverts with `TargetPredatesOldestObservation` if the requested time is older than the oldest observation in the buffer.
+Any window length works, from 1 minute to 30 days, as long as the buffer contains observations spanning that period. Reverts with `TargetPredatesOldestObservation` if the requested time is older than the oldest observation in the buffer.
+
+### `observeLong(PoolKey, uint32[] secondsAgos)`
+
+Identical semantics and return shape to `observe`. Each requested lookback is served from the coarse ring, except targets at or after the newest coarse checkpoint — including `secondsAgo == 0` — which come from the per-block ring. The rings share one cumulative scale (the coarse ring downsamples the per-block one), so the mix composes; sourcing the recent end from the per-block ring means its live-tick extrapolation spans at most one block, so a flash move cannot be credited for the open bucket's elapsed hour. `UmiaTwapMilestoneCondition` reads its 30-day window through `observeLong`; for windows below 2 × `COARSE_INTERVAL` it falls back to `observe`, since an hourly ring cannot average a sub-hour window. Precision at the old endpoint is bounded by one `COARSE_INTERVAL` of interpolation fuzz — negligible against a monthly average, and exact whenever it falls in an already-settled quiet stretch.
+
+### `oracleStates(PoolId)` and `getObservation(PoolId, uint16)`
+
+`oracleStates` returns `(index, cardinality, cardinalityNext)`. `getObservation` returns a single slot's `(blockTimestamp, tickCumulative, secondsPerLiquidityCumulativeX128, initialized)`. Together they let a consumer check whether a window is servable before calling `observe`, which is how the vault's fail-closed predicate works. `coarseOracleStates` and `getCoarseObservation` are the coarse-ring equivalents.
 
 ### `increaseCardinalityNext(PoolKey, uint16)`
 
-Pre-allocates observation buffer slots. Permissionless — anyone can call it and pay the gas.
+Pre-allocates observation buffer slots. Permissionless: anyone can call it and pay the gas. `increaseCoarseCardinalityNext` is the coarse-ring twin.
 
 ```solidity
-lbp.increaseCardinalityNext(key, 1000);
+hook.increaseCardinalityNext(key, 1000);
 ```
 
-Each slot costs one SSTORE (~20k gas) to initialize. The buffer starts at cardinality 1 and grows as new slots are needed during writes.
+Each slot costs one cold SSTORE (~22,100 gas) to initialize. The call is a no-op if `cardinalityNext` is already at or above the requested value, and `grow()` picks up where the last call left off, so large targets can be reached across several transactions.
 
 ## Buffer Sizing (Cardinality)
 
 ### What is cardinality?
 
-The observation buffer is a fixed-size circular array. **Cardinality** is the number of usable slots in this array. When all slots are full, new observations overwrite the oldest ones. The buffer starts at cardinality 1 (only the most recent observation is kept) and must be explicitly grown by calling `increaseCardinalityNext()`.
-
-Growing cardinality costs gas upfront: each new slot requires a cold SSTORE (~22,100 gas) to initialize. This is a one-time cost — once initialized, subsequent writes to that slot are warm SSTOREs (~5,000 gas each, paid by swappers as part of normal hook execution).
+The observation buffer is a fixed-size circular array. **Cardinality** is the number of usable slots. When all slots are full, new observations overwrite the oldest ones. `cardinalityNext` is the capacity that has been paid for; `cardinality` catches up to it lazily as writes wrap past the current end.
 
 ### Why this matters
 
-A TWAP query for a given time window (e.g., 30 days) only works if the buffer still contains an observation from that far back. If trading activity has overwritten all observations older than 30 days, the query reverts with `TargetPredatesOldestObservation`.
+A TWAP query for a given window only works if the buffer still contains an observation from that far back. If trading activity has overwritten every observation older than the window, the query reverts with `TargetPredatesOldestObservation`.
 
-The oracle is always **time-based**: you query "what was the average price over the last N seconds?" The oracle interpolates between observations, assuming the tick stays constant between them. Even with sparse observations (e.g., 1 per day), a 30-day TWAP is valid as long as the oldest observation is >= 30 days old. Cardinality is an infrastructure constraint, not a semantic one.
+The oracle is always **time-based**: you query "what was the average price over the last N seconds?" It interpolates between observations, assuming the tick stays constant between them. Even with sparse observations (say 1 per day), a 30-day TWAP is valid as long as the oldest observation is at least 30 days old. Cardinality is an infrastructure constraint, not a semantic one.
 
-### Sizing for 30-day TWAPs
+Because at most one observation is written per block, **cardinality is denominated in blocks with activity, not in swaps**. On Base (2s blocks), a fully saturated pool consumes 30 slots per minute.
 
-The buffer must survive 30 days without the oldest needed observation being evicted. The risk is not average activity — it's **peak activity**. A single busy day with hundreds of swaps can consume many buffer slots.
+### Sizing for the 30-minute sandwich guard
 
-| Trading frequency  | Observations per day | 30-day total          |
-| ------------------ | -------------------- | --------------------- |
-| 1 swap/hour        | 24                   | 720                   |
-| 1 swap/10 min      | 144                  | 4,320                 |
-| 1 swap/min         | 1,440                | 43,200                |
-| 1 swap/block (12s) | 7,200                | 216,000 (exceeds max) |
+Worst case is one observation per block for the whole window: 1800s / 2s = **900 slots** on Base. The bootstrap default of 100 slots only covers ~200s of back-to-back active blocks, so a pool under sustained per-block activity can wrap its buffer inside the window and start failing the guard with `InsufficientOracleHistory`.
 
-**Recommended cardinality: 2,000–3,000** for pools that need 30-day TWAPs. This handles pools with sustained activity of up to ~70–100 swaps/hour (well above typical Venture pools) without evicting 30-day-old data. If a pool consistently sees higher throughput, cardinality can be increased later — `increaseCardinalityNext()` is permissionless and additive.
+This fails safe, never open, but it does block `createMarket`, `deposit` and `withdraw` until history rebuilds. **Grow busy pools to at least 1,000 slots.** One `increaseCardinalityNext(key, 1000)` call costs ~20M gas and is permissionless.
 
-### Initialization cost
+### Sizing for 30-day TWAPs: the coarse ring
 
-Each slot costs ~22,100 gas (cold SSTORE). The Ethereum block gas limit is ~60M, so a single `increaseCardinalityNext()` call can initialize at most ~2,600 slots. To reach higher cardinalities, call it multiple times — `grow()` picks up where the last call left off.
+Long windows are served by the coarse ring, whose consumption rate is fixed by cadence: **at most 24 slots per day, at any trade volume**. The per-block ring is structurally incapable of a 30-day window under load (one swap per 2s block needs 1,296,000 slots, ~20x the 65,535 maximum) — that is precisely why the coarse ring exists, not a sizing knob to tune around.
 
-| Target cardinality | Transactions needed | Total gas | Cost at 10 gwei |
-| ------------------ | ------------------- | --------- | --------------- |
-| 720                | 1                   | ~16M      | ~0.00016 ETH    |
-| 1,500              | 2                   | ~33M      | ~0.00033 ETH    |
-| 3,000              | 3                   | ~66M      | ~0.00066 ETH    |
-| 10,000             | 8                   | ~221M     | ~0.0022 ETH     |
+The keeper's `grow-oracle` cron reaches `COARSE_ORACLE_CARDINALITY_TARGET = 768` (31 days x 24 buckets + headroom), which is sufficient permanently. Growing further only lengthens the maximum servable window (e.g. 1,488 slots for a 60-day TWAP); it is never needed to keep the 30-day window alive.
 
-This cost is paid once per pool, typically right after LBP migration. It can be paid by anyone (permissionless) and does not need to come from the Venture owner.
+Note the coarse ring is fail-closed by time, not slots: the 30-day read serves only once 30 days of history exist. After migration (or any event that resets the ring's history) the milestone gate correctly reports `OracleNotReady` until a full window has accrued.
 
-### What happens if cardinality is too low?
+### Grow cost and Base's per-transaction cap
 
-- Short-window queries (4h TWAP for MarketCore) still work — even cardinality 1 supports a 4h TWAP as long as there's been at least one swap in the last 4 hours, since the oracle interpolates from its single observation.
-- Long-window queries (30-day TWAP for incentive packages) revert with `TargetPredatesOldestObservation`. The incentive contract should handle this gracefully (e.g., "check not yet available").
-- The buffer can always be grown later without losing existing observations.
+Each slot costs ~22,100 gas (cold SSTORE). The constraint is not the block gas limit but **Base's 2^24 (~16.78M) per-transaction cap** — a single tx cannot exceed it, and the keeper ships `migrate()` with an explicit 16M limit. So growing 768 coarse slots (~17M) in one call is impossible, and folding it into `migrate()` (which already does pool init + a full-range mint) would blow the cap outright.
+
+Both rings are therefore grown the same way: `bootstrapFromLBP` seeds 100 slots each (~2.2M apiece, inside the migration tx), and the `grow-oracle` cron cranks 300-slot chunks (~6.6M each, well under the cap) until it reaches 1000 (per-block) and 768 (coarse). Growing is permissionless and does not need to come from the Venture owner.
+
+### Fail-closed behavior
+
+`SpotLiquidityVault._oracleHasFullWindow` refuses to serve the guard unless **both** hold:
+
+1. `cardinality >= 2`. With a single observation, `observe` extrapolates forward and returns `twapTick == spotTick`, which would make the deviation check pass unconditionally and silently disable the guard.
+2. The oldest initialized observation is at or before `block.timestamp - TWAP_WINDOW`.
+
+If either fails, the vault reverts with `InsufficientOracleHistory`. The only case that skips the guard entirely is an empty position (`currentLiquidity() == 0`): there are no reserves to sandwich, and keeping it open is what lets a fully drained vault be re-bootstrapped.
+
+Long-window consumers behave the same way: `UmiaTwapMilestoneCondition` reverts rather than reporting a milestone as unmet on missing data.
 
 ## Security Properties
 
-**Manipulation resistance**: An attacker wanting to skew a 4-hour TWAP must sustain an artificial price for the entire 4-hour window. With the truncation cap at 9,116 ticks/block, even a flashloan attack in a single block can only contribute a bounded amount to the cumulative value.
+**Manipulation resistance**: an attacker skewing a TWAP must sustain an artificial price against everyone who profits from correcting it. The accepted tick moves by at most 4,558 ticks per elapsed second, and the cumulative integrates its ramp and recovery path. Triggering more writes cannot accelerate the filter, while restoring the pool lets it recover during a quiet gap instead of carrying a stale clamped tick across that gap.
 
-**Full-range liquidity only**: The `UmiaLBP` hook enforces that all liquidity positions on the spot pool are full-range (spanning `minUsableTick` to `maxUsableTick`). Concentrated liquidity would create zero-liquidity tick gaps where the tick can be moved for free, undermining the truncation cap's security guarantee. The enforcement happens in `beforeAddLiquidity` — any position with a narrower tick range reverts with `OnlyFullRangePositions`. See [UmiaLBP docs](contracts/UmiaLBP.md) for details.
+**No coarse-ring boundary amplification**: because the coarse ring copies the per-block cumulative rather than re-integrating the tick sampled at the bucket boundary, a transient move earns only its bounded fine-ring ramp/recovery area in the long-window TWAP. A naive coarse ring that recorded the boundary tick would let a one-block spike, held across an hour boundary, count for the whole hour — ~1800x leverage against the milestone gate. Downsampling closes that on the write path, and `observeLong` closes the read path symmetrically by serving targets newer than the latest checkpoint from the per-block ring, so a flash move at read time gets at most one block of extrapolation weight instead of the open bucket's elapsed hour.
 
-**No liquidity lock**: Unlike reference implementations that permanently lock liquidity to guarantee oracle integrity, Umia does not enforce a liquidity floor. The seed LP (set during LBP migration) provides substantial baseline liquidity, and MarketCore only removes 50% for decision markets. The truncation mechanism provides manipulation resistance regardless of liquidity depth.
+**Operator-only, full-range liquidity**: `UmiaHook` enforces in `beforeAddLiquidity` and `beforeRemoveLiquidity` that only the pool's registered `operator` (the venture's `SpotLiquidityVault`) may change liquidity, and that every position spans `minUsableTick` to `maxUsableTick`. Concentrated liquidity would create zero-liquidity tick gaps where the tick can be moved for free, undermining the slew limit. Violations revert with `UnauthorizedLiquidityOperator` or `OnlyFullRangePositions`.
 
-**Fail-closed guard**: The `SpotMarketPriceGuard` distinguishes two failure modes when `observe(TWAP_WINDOW)` reverts:
-- **Oracle uninitialized** (pre-migration): silently allows the operation (bootstrap case).
-- **Oracle active but insufficient history** (buffer evicted or too young): reverts with `InsufficientOracleHistory`. This prevents an attacker from exhausting the observation buffer with dust swaps to bypass the guard.
+**No liquidity lock**: unlike reference implementations that permanently lock liquidity to guarantee oracle integrity, Umia does not enforce a liquidity floor. The vault holds the canonical seed LP from LBP migration, and decision-market creation only pulls `BOOTSTRAP_PULL_BPS` (50%). Elapsed-time truncation provides manipulation resistance regardless of liquidity depth.
 
-**Buffer exhaustion resistance**: Migration initializes the oracle with 250 observation slots (~5.5M gas). At worst case (1 observation/block, 12s), 250 slots covers ~50 minutes. While this doesn't fully cover the 4h TWAP window under adversarial conditions, the fail-closed guard ensures that buffer exhaustion triggers `InsufficientOracleHistory` rather than bypassing the check. Cardinality can be increased later via `increaseCardinalityNext()` (permissionless) if higher resilience is needed.
+**Fail-closed guard**: see [Fail-closed behavior](#fail-closed-behavior). Buffer exhaustion by dust swaps blocks the operation instead of bypassing the check.
 
-## Integration with MarketCore
+## Integration with Decision Markets
 
-When `createMarket()` is called, `_checkSpotTwapDeviation()` runs before any LP is removed:
+`UmiaMarketCore.createMarket()` does not query the oracle itself. It calls `MarketCreationLib._pullSeedLiquidity`, which delegates to the vault:
 
-1. Reads the Venture's LBP address and LP position
-2. Queries the 4-hour TWAP via `observe()`
-3. Reads the current spot tick from the pool
-4. Computes the absolute tick difference: `|spotTick - twapTick|`
-5. Reverts with `SpotPriceDeviationTooHigh` if the tick difference exceeds `MAX_TICK_DEVIATION` (default: 500 ticks ≈ 5% price deviation)
+1. `MarketCreationLib` reads the venture's vault from `hub.ventureLiquidityVault()`, reverting with `LPPositionNotRegistered` if unset.
+2. It calls `ISpotLiquidityVault.pullForDecisionMarket(marketId, BOOTSTRAP_PULL_BPS)`.
+3. The vault runs `_requireSpotWithinTwapDeviation()` before removing anything: it checks `_oracleHasFullWindow`, queries the 30-minute TWAP via `hook.observe()`, reads the current spot tick from `getSlot0`, and computes `|spotTick - twapTick|`.
+4. It reverts with `SpotPriceDeviationTooHigh` if that difference exceeds `MAX_TICK_DEVIATION` (1000 ticks, roughly 10.5%), or `InsufficientOracleHistory` if the window is not servable.
+5. Only then does it remove 50% of its full-range liquidity and hand the proceeds to `UmiaMarketCore`.
 
-Tick differences map directly to percentage price changes because ticks are logarithmic (`price = 1.0001^tick`). A fixed tick difference corresponds to a fixed percentage regardless of the absolute tick level.
+Tick differences map directly to percentage price changes because ticks are logarithmic (`price = 1.0001^tick`), so a fixed tick difference is a fixed percentage regardless of the absolute tick level.
 
-This prevents an attacker from manipulating the spot price right before market creation to skew the initial CPMM reserves for all proposals.
+Settlement takes the same path in reverse: `SettlementLib` calls `returnFromDecisionMarket`, which runs the identical guard before re-adding liquidity.
 
 ## Files
 
-| File                                 | Role                                                                                                                             |
-| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
-| `src/libraries/SpotMarketOracle.sol` | Circular buffer library — observation storage, writes, binary search, interpolation                                              |
-| `src/launchpad/UmiaLBP.sol`          | Hook integration — writes observations in `beforeSwap`/`beforeAddLiquidity`, exposes `observe()` and `increaseCardinalityNext()` |
-| `src/core/UmiaMarketCore.sol`     | Consumer — `_checkSpotTwapDeviation()` queries the 4h TWAP on market creation                                                    |
-| `test/launchpad/UmiaLBPOracle.t.sol` | Oracle integration tests                                                                                                         |
-| `src/periphery/UmiaTwapMilestoneCondition.sol`  | Consumer — full-window TWAP query gating MetaVesT vesting milestones                                                              |
+| File                                           | Role                                                                                                                          |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `src/libraries/SpotMarketOracle.sol`           | Circular buffer library: observation storage, writes, truncation, binary search, interpolation (shared by both rings)          |
+| `src/periphery/UmiaHook.sol`                   | Hook integration: writes both rings in `beforeSwap`/`beforeAddLiquidity`/`beforeRemoveLiquidity`; exposes `observe()`/`observeLong()`, `oracleStates()`/`coarseOracleStates()`, `getObservation()`/`getCoarseObservation()`, `increaseCardinalityNext()`/`increaseCoarseCardinalityNext()` |
+| `src/libraries/TwapMath.sol`                   | `averageTick()` helper with correct rounding for negative averages                                                            |
+| `src/core/SpotLiquidityVault.sol`              | Consumer: 30-minute sandwich guard on deposits, withdrawals, and decision-market pull/return; grows both rings at bootstrap    |
+| `src/periphery/UmiaTwapMilestoneCondition.sol` | Consumer: full-window TWAP query (via `observeLong`) gating MetaVesT vesting milestones                                        |
+| `test/launchpad/UmiaLBPOracle.t.sol`           | Oracle integration tests, including coarse-ring servability, gap extrapolation, and segmented-path precision                   |
+| `test/periphery/UmiaHook.t.sol`                | Hook unit tests, including coarse-ring bucket gating, ring independence, clamp cadence, and grow gas budget                    |
+| `test/markets/DecisionMarketOracleTruncation.t.sol` | Truncation behavior tests                                                                                                 |

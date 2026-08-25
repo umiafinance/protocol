@@ -93,6 +93,11 @@ interface IUmiaHook {
         external
         returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew);
 
+    /// @notice Grow the coarse oracle ring buffer's effective capacity. Permissionless.
+    function increaseCoarseCardinalityNext(PoolKey calldata key, uint16 cardinalityNext)
+        external
+        returns (uint16 cardinalityNextOld, uint16 cardinalityNextNew);
+
     // ─────────────────────────────────────────────────────────
     // View Functions
     // ─────────────────────────────────────────────────────────
@@ -103,14 +108,41 @@ interface IUmiaHook {
     /// @notice Per-pool oracle ring-buffer cursor.
     function oracleStates(PoolId id) external view returns (uint16 index, uint16 cardinality, uint16 cardinalityNext);
 
+    /// @notice Per-pool coarse (interval-sampled) oracle ring-buffer cursor.
+    function coarseOracleStates(PoolId id)
+        external
+        view
+        returns (uint16 index, uint16 cardinality, uint16 cardinalityNext);
+
+    /// @notice Sampling interval of the coarse oracle ring, in seconds.
+    function COARSE_INTERVAL() external view returns (uint32);
+
     /// @notice Read TWAP-style observations from the pool's oracle for the given lookbacks.
     function observe(PoolKey calldata key, uint32[] calldata secondsAgos)
         external
         view
         returns (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s);
 
+    /// @notice `observe` for month-scale lookbacks (e.g. the 30-day vesting-milestone TWAP):
+    ///         coarse ring, with targets newer than its latest checkpoint served per-block.
+    function observeLong(PoolKey calldata key, uint32[] calldata secondsAgos)
+        external
+        view
+        returns (int48[] memory tickCumulatives, uint144[] memory secondsPerLiquidityCumulativeX128s);
+
     /// @notice Direct read of a single observation slot in the ring buffer.
     function getObservation(PoolId id, uint16 index)
+        external
+        view
+        returns (
+            uint32 blockTimestamp,
+            int48 tickCumulative,
+            uint144 secondsPerLiquidityCumulativeX128,
+            bool initialized
+        );
+
+    /// @notice Direct read of a single observation slot in the coarse ring buffer.
+    function getCoarseObservation(PoolId id, uint16 index)
         external
         view
         returns (

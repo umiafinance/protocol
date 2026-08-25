@@ -42,7 +42,7 @@ if (
 }
 ```
 
-**Why this matters**: The spot pool's TWAP oracle uses a truncated tick-based design that assumes liquidity exists at every tick level. Concentrated liquidity creates zero-liquidity gaps where moving the tick costs nothing, making the truncation cap ineffective — an attacker could push the price through empty ranges with minimal capital. Full-range positions guarantee uniform liquidity depth across all ticks.
+**Why this matters**: The spot pool's TWAP oracle uses an elapsed-time, slew-limited tick design that assumes liquidity exists at every tick level. Concentrated liquidity creates zero-liquidity gaps where moving the tick costs nothing, making the slew limit ineffective — an attacker could push the price through empty ranges with minimal capital. Full-range positions guarantee uniform liquidity depth across all ticks.
 
 **Position modification**: Uniswap V4 positions have immutable tick ranges. To change a position's range, a user must remove the old position and add a new one. Since `beforeRemoveLiquidity` is disabled (returns false in hook permissions), removal always succeeds. The enforcement in `beforeAddLiquidity` is sufficient to guarantee that only full-range positions exist on the pool.
 

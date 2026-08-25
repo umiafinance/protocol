@@ -408,4 +408,109 @@ contract UmiaLBPOracleTest is Test, PosmTestSetup {
 
         assertFalse(success, "oldestObservationTimestamp should not be part of the public ABI");
     }
+
+    // ============ Coarse (Dual-Cadence) Oracle Tests ============
+
+    function test_CoarseOracleSeededAtBootstrapThenCronGrows() public {
+        PoolId id = poolKey.toId();
+        (uint16 index, uint16 cardinality, uint16 cardinalityNext) = umiaHook.coarseOracleStates(id);
+        assertEq(index, 0);
+        assertEq(cardinality, 1);
+        assertEq(cardinalityNext, 100, "Bootstrap seeds the coarse ring; the cron grows it to span");
+
+        (uint32 ts,,, bool initialized) = umiaHook.getCoarseObservation(id, 0);
+        assertTrue(initialized, "Coarse ring should be seeded by afterInitialize");
+        assertEq(ts, uint32(block.timestamp), "Seed and bootstrap share the migration tx");
+
+        // The cron's chunk-grow (mirrored here) reaches the full 30-day span permissionlessly.
+        umiaHook.increaseCoarseCardinalityNext(poolKey, 768);
+        (,, cardinalityNext) = umiaHook.coarseOracleStates(id);
+        assertEq(cardinalityNext, 768);
+    }
+
+    /// @notice Regression: sustained trading wraps the per-block ring short of a month; the coarse
+    ///         ring keeps serving the 30-day window.
+    function test_ObserveLong_Serves30DayWindowUnderSustainedTrading() public {
+        bool zeroForOne = Currency.unwrap(poolKey.currency0) == address(currency);
+
+        umiaHook.increaseCoarseCardinalityNext(poolKey, 768);
+
+        for (uint256 i = 0; i < 745; i++) {
+            vm.warp(block.timestamp + 1 hours);
+            _doSwap(0.01e18, i % 2 == 0 ? zeroForOne : !zeroForOne);
+        }
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 30 days;
+        secondsAgos[1] = 0;
+
+        vm.expectRevert();
+        umiaHook.observe(poolKey, secondsAgos);
+
+        (int48[] memory tickCumulatives,) = umiaHook.observeLong(poolKey, secondsAgos);
+        int48 twapTick = (tickCumulatives[1] - tickCumulatives[0]) / int48(uint48(30 days));
+
+        (, int24 spotTick,,) = manager.getSlot0(poolKey.toId());
+        int48 diff = twapTick > int48(spotTick) ? twapTick - int48(spotTick) : int48(spotTick) - twapTick;
+        assertTrue(diff < 200, "tiny alternating swaps keep the 30d TWAP near spot");
+    }
+
+    /// @notice A quiet stretch spanning the 30-days-ago point reconstructs exactly by extrapolation.
+    function test_ObserveLong_QuietGapExtrapolatesExactly() public {
+        bool zeroForOne = Currency.unwrap(poolKey.currency0) == address(currency);
+
+        vm.warp(block.timestamp + 1 hours);
+        _doSwap(1e18, zeroForOne);
+
+        vm.warp(block.timestamp + 40 days);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 30 days;
+        secondsAgos[1] = 0;
+        (int48[] memory tickCumulatives,) = umiaHook.observeLong(poolKey, secondsAgos);
+
+        (, int24 spotTick,,) = manager.getSlot0(poolKey.toId());
+        assertEq(
+            (tickCumulatives[1] - tickCumulatives[0]) / int48(uint48(30 days)),
+            int48(spotTick),
+            "constant-tick extrapolation across the quiet gap is exact"
+        );
+    }
+
+    /// @notice A 30-day window spanning three price regimes time-averages them.
+    function test_ObserveLong_TracksSegmentedPricePath() public {
+        bool zeroForOne = Currency.unwrap(poolKey.currency0) == address(currency);
+        PoolId id = poolKey.toId();
+
+        // vm.getBlockTimestamp, not block.timestamp: solc may CSE TIMESTAMP reads across vm.warp.
+        (, int24 tick0,,) = manager.getSlot0(id);
+
+        vm.warp(vm.getBlockTimestamp() + 12 days);
+        _doSwap(5_000e18, zeroForOne);
+        (, int24 tick1,,) = manager.getSlot0(id);
+
+        vm.warp(vm.getBlockTimestamp() + 10 days);
+        _doSwap(5_000e18, !zeroForOne);
+        (, int24 tick2,,) = manager.getSlot0(id);
+
+        vm.warp(vm.getBlockTimestamp() + 10 days);
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 30 days;
+        secondsAgos[1] = 0;
+        (int48[] memory tickCumulatives,) = umiaHook.observeLong(poolKey, secondsAgos);
+        int256 twapTick = int256((tickCumulatives[1] - tickCumulatives[0]) / int48(uint48(30 days)));
+
+        assertLt(_absDiff(tick0, tick1), 9116, "price move stays within the legacy two-second allowance");
+        assertLt(_absDiff(tick1, tick2), 9116, "price move stays within the legacy two-second allowance");
+
+        int256 expected = (int256(tick0) + int256(tick1) + int256(tick2)) / 3;
+        assertTrue(
+            twapTick >= expected - 2 && twapTick <= expected + 2, "30d TWAP should time-average the three price regimes"
+        );
+    }
+
+    function _absDiff(int24 a, int24 b) internal pure returns (uint256) {
+        return a > b ? uint256(int256(a - b)) : uint256(int256(b - a));
+    }
 }

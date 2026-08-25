@@ -6,6 +6,7 @@ import {
 } from "@continuous-clearing-auction/periphery/validationHooks/ValidationHookIntrospection.sol";
 import {IValidationHook} from "@continuous-clearing-auction/interfaces/IValidationHook.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IGatedValidationHook} from "../interfaces/IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "../interfaces/IMaxBidPriceValidationHook.sol";
 import {IUmiaValidationHook} from "../interfaces/IUmiaValidationHook.sol";
 import {Ownable} from "@solady/auth/Ownable.sol";
@@ -239,11 +240,9 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
             return;
         }
 
-        // Empty provider list = no zkTLS proof gate (see enableStep). If the step also
-        // has no server permit enabled, nothing gates it, so the bid passes. A permit-
-        // enabled step still needs its permit; a zkTLS proof would revert below.
-        bool hasProofGate = _stepProviderHashes[stepIndex].length != 0;
-        bool hasPermitGate = (_stepPermitEnabledBitmap & (1 << stepIndex)) != 0;
+        // Nothing configured = nothing gates the step, so the bid passes. A permit-enabled
+        // step still needs its permit; a zkTLS proof would revert below.
+        (bool hasProofGate, bool hasPermitGate) = _stepGateKinds(stepIndex);
         if (!hasProofGate && !hasPermitGate) return;
 
         // The step's gate config decides which credential is required; the caller's type
@@ -861,6 +860,19 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
         return _maxBidPrice;
     }
 
+    /// @inheritdoc IGatedValidationHook
+    /// @dev Derived, not stored, because the step toggles move the gate at any time. Reports the
+    ///      highest gated step, so a gap between gated steps reads as gated throughout.
+    function expirationBlock() external view returns (uint256) {
+        for (uint256 i = _steps.length; i != 0;) {
+            unchecked {
+                --i;
+            }
+            if (_isStepGated(i)) return _steps[i].endBlock;
+        }
+        return 0;
+    }
+
     /// @inheritdoc IUmiaValidationHook
     function stepMaxBidAmount(uint256 stepIndex) external view returns (uint256) {
         return _stepMaxBidAmount[stepIndex];
@@ -892,12 +904,25 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
         returns (bool)
     {
         return super.supportsInterface(interfaceId) || interfaceId == type(IUmiaValidationHook).interfaceId
-            || interfaceId == type(IMaxBidPriceValidationHook).interfaceId;
+            || interfaceId == type(IMaxBidPriceValidationHook).interfaceId
+            || interfaceId == type(IGatedValidationHook).interfaceId;
     }
 
     // ─────────────────────────────────────────────────────────
     // Internal
     // ─────────────────────────────────────────────────────────
+
+    /// @dev Empty provider list = no zkTLS proof gate (see enableStep).
+    function _stepGateKinds(uint256 stepIndex) internal view returns (bool hasProofGate, bool hasPermitGate) {
+        hasProofGate = _stepProviderHashes[stepIndex].length != 0;
+        hasPermitGate = (_stepPermitEnabledBitmap & (1 << stepIndex)) != 0;
+    }
+
+    function _isStepGated(uint256 stepIndex) internal view returns (bool) {
+        if ((_stepEnabledBitmap & (1 << stepIndex)) == 0) return false;
+        (bool hasProofGate, bool hasPermitGate) = _stepGateKinds(stepIndex);
+        return hasProofGate || hasPermitGate;
+    }
 
     /// @dev Emits StepProviderRemoved for any existing providers not in the new set
     function _emitProviderRemovals(uint256 _stepIndex, bytes32[] calldata _newProviders) internal {

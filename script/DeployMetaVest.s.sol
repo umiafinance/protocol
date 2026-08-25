@@ -15,11 +15,12 @@ import {UmiaTwapMilestoneCondition} from "../src/periphery/UmiaTwapMilestoneCond
 ///         metavestController and VentureVestingAuthority adapter are intentionally NOT deployed here
 ///         -- they are created per venture by the launch orchestration (§8.1).
 /// @dev forge script script/DeployMetaVest.s.sol:DeployMetaVest --rpc-url <rpc> --broadcast
-///      TWAP_WINDOW (seconds) is optional and defaults to 1800 (30 min).
+///      TWAP_WINDOW (seconds) is required, with no default: a forgotten value would
+///      silently ship a 30-minute condition that only ever reads the per-block ring.
 contract DeployMetaVest is Script {
     function run() external {
         uint256 pk = vm.envUint("DEPLOYER_PRIVATE_KEY");
-        uint32 twapWindow = uint32(vm.envOr("TWAP_WINDOW", uint256(1800)));
+        uint32 twapWindow = uint32(vm.envUint("TWAP_WINDOW"));
 
         console.log("Deployer:", vm.addr(pk));
         console.log("TWAP window (s):", twapWindow);

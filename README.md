@@ -64,6 +64,7 @@ See [Architecture](./docs/ARCHITECTURE.md) for contract-level detail and data fl
 - [Development Guide](./docs/DEVELOPMENT.md)
 - [Decision Market Flow](./docs/DECISION_MARKET_FLOW.md)
 - [Governance & Treasury Layer](./docs/GOVERNANCE_TREASURY_LAYER.md)
+- [Building a Liquidation Proposal](./docs/LIQUIDATIONS.md)
 - [Spot Oracle](./docs/SPOT_ORACLE.md)
 - [Contract Upgrades](./docs/UPGRADES.md)
 - [New Chain Deployment](./docs/NEW_CHAIN_DEPLOYMENT.md)

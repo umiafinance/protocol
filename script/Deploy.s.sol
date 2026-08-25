@@ -59,8 +59,6 @@ contract Deploy is Script {
         ConditionalMarketOracle conditionalMarketOracle = new ConditionalMarketOracle(address(hub));
         console.log("ConditionalMarketOracle deployed at:", address(conditionalMarketOracle));
 
-        // Deploy Spot Market Price Guard (4h TWAP window, 5% max deviation)
-
         // Deploy MarketCore (implementation + proxy). Forge auto-deploys + links the external
         // libraries MarketCreationLib / SettlementLib.
         UmiaMarketCore mmImpl = new UmiaMarketCore();
@@ -319,7 +317,10 @@ contract Deploy is Script {
             console.log("UmiaTwapMilestoneCondition (existing):", vm.envAddress("TWAP_MILESTONE_CONDITION"));
             return;
         }
-        uint32 twapWindow = uint32(vm.envOr("TWAP_WINDOW", uint256(1800)));
+        // Required, no default: a forgotten TWAP_WINDOW would silently ship a 30-minute
+        // condition that only ever reads the per-block ring.
+        uint32 twapWindow = uint32(vm.envUint("TWAP_WINDOW"));
+        console.log("TWAP window (s):", twapWindow);
         console.log("MetaVesTFactory deployed at:", address(new MetaVesTFactory()));
         console.log("VestingAllocationFactory deployed at:", address(new VestingAllocationFactory()));
         console.log("TokenOptionFactory deployed at:", address(new TokenOptionFactory()));

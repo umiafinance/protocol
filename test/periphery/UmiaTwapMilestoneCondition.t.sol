@@ -160,6 +160,34 @@ contract UmiaTwapMilestoneConditionIntegrationTest is TwapMilestoneConditionTest
         _check(0);
     }
 
+    /// @notice Regression: a 30-day condition stays evaluable via the coarse ring after sustained
+    ///         trading has wrapped the per-block ring.
+    function test_check_thirtyDayWindowServableAfterFineRingWraps() public {
+        UmiaTwapMilestoneCondition longCondition = new UmiaTwapMilestoneCondition(30 days);
+
+        IUmiaHook hook = IUmiaLBP(IVenture(_venture).lbp()).umiaHook();
+        PoolKey memory key = ISpotLiquidityVault(hub.ventureLiquidityVault(_venture)).getPoolKey();
+
+        hook.increaseCoarseCardinalityNext(key, 768);
+        vm.warp(block.timestamp + 30 days);
+        for (uint256 i = 0; i < 110; i++) {
+            vm.warp(block.timestamp + 1 hours);
+            _swapSpot(_venture, 0.01e18, i % 2 == 0);
+        }
+
+        uint32[] memory secondsAgos = new uint32[](2);
+        secondsAgos[0] = 30 days;
+        secondsAgos[1] = 0;
+        vm.expectRevert();
+        hook.observe(key, secondsAgos);
+
+        _register(1);
+        assertTrue(longCondition.checkCondition(ALLOCATION, bytes4(0), abi.encode(0)));
+
+        _mockThreshold(vm, ALLOCATION, 1, type(uint160).max);
+        assertFalse(longCondition.checkCondition(ALLOCATION, bytes4(0), abi.encode(1)));
+    }
+
     function test_check_capsOverflowingPriceAtUint160Max() public {
         vm.warp(block.timestamp + TWAP_WINDOW + 1);
         _register(type(uint160).max);

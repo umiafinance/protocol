@@ -69,6 +69,8 @@ abstract contract MetaVesTTestBase is DecisionMarketBase {
         secondsAgos[0] = TWAP_WINDOW;
         secondsAgos[1] = 0;
 
+        // TWAP_WINDOW (30 min) is below 2 * COARSE_INTERVAL, so the condition reads the per-block
+        // ring; this mirror must match. See UmiaTwapMilestoneCondition._getTwapPriceX96.
         (int48[] memory tickCumulatives,) = hook.observe(key, secondsAgos);
         int48 tickDelta = tickCumulatives[1] - tickCumulatives[0];
         int48 windowInt = int48(uint48(TWAP_WINDOW));

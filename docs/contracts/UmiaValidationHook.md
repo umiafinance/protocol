@@ -54,6 +54,7 @@ Per [CIP-1](https://github.com/Uniswap/continuous-clearing-auction/blob/main/CIP
 | `IValidationHook`            | `0x22c44b5f` |
 | `IUmiaValidationHook`        | `0xbff343b3` |
 | `IMaxBidPriceValidationHook` | `0x2268a4c3` |
+| `IGatedValidationHook`       | `0x6d417064` |
 
 `IUmiaValidationHook` covers the permissionless surface: the gating config reads (`cca`, `getSteps`, `isStepEnabled`, `isStepPermitEnabled`, `getStepProviders`, `isVerified`, `signer`, `stepMaxBidAmount`, `zkBidTotal`, `isPermitNonceUsed`, `identityOwner`) plus the proof relays (`submitProof`, `submitProofBatch`). Owner-only administration is deliberately excluded, so ops changes cannot shift the ID integrators key off.
 
@@ -61,7 +62,11 @@ Per [CIP-1](https://github.com/Uniswap/continuous-clearing-auction/blob/main/CIP
 
 The cap's revert is `MaxBidPriceExceeded()`, deliberately bare so the selector (`0x77c99cf5`) matches theirs and generic CCA tooling can decode it without our ABI. `test_maxBidPriceExceeded_selectorMatchesUniswap` pins it.
 
-`test_supportsInterface_idsAreStable` pins both IDs, so changing either interface fails the suite until the constants and this table are updated together.
+`IGatedValidationHook` (`src/interfaces/IGatedValidationHook.sol`) is the gating half of Uniswap's [`IGatedERC1155ValidationHook`](https://github.com/Uniswap/continuous-clearing-auction/blob/main/src/periphery/validationHooks/GatedERC1155ValidationHook.sol). Their auction UI reads it to learn that early bidding is restricted and shows its allow-list treatment while `block.number < expirationBlock()`, lifting the restriction on its own once that block passes. We declare it locally rather than importing theirs because theirs extends `IBaseERC1155ValidationHook`, and we implement neither `erc1155()` nor `tokenId()` — our gate is zkTLS proofs and server permits, not token ownership. The ID is the same (`0x6d417064`) because Solidity excludes inherited selectors from `type().interfaceId`, so the ERC1155 half never enters the computation and their introspection check still passes; `test_gatedInterfaceId_matchesUniswap` pins that equality against the real upstream interface. `IBaseERC1155ValidationHook` (`0xc2b72dab`) is deliberately left unclaimed, since a consumer that saw it would call functions we do not have.
+
+`expirationBlock()` is derived on read, returning the `endBlock` of the highest-index step that actually gates, or `0` when nothing gates. "Actually gates" means enabled *and* carrying either a provider list or the permit toggle; `validate()` and `expirationBlock()` read that from one helper (`_stepGateKinds`) so a new gate kind cannot widen the enforced window without widening the reported one. It is not stored because `enableStep`/`disableStep` and the permit toggles move the gate at any time, and a cached block would then contradict what `validate()` enforces. Reporting the *highest* gated step means a gap between gated steps reads as gated throughout, which is the safe direction: under-reporting would let their UI build bids the hook rejects. Unlike Uniswap's `immutable` version, ours can move, so a consumer must not cache it.
+
+`test_supportsInterface_idsAreStable` pins all three IDs, so changing any of these interfaces fails the suite until the constants and this table are updated together.
 
 ## Notes
 

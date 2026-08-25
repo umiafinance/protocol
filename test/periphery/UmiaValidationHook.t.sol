@@ -5,8 +5,15 @@ import {Test} from "forge-std/Test.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IValidationHook} from "@continuous-clearing-auction/interfaces/IValidationHook.sol";
 import {AuctionStep} from "@continuous-clearing-auction/libraries/StepLib.sol";
+import {
+    IBaseERC1155ValidationHook
+} from "@continuous-clearing-auction/periphery/validationHooks/BaseERC1155ValidationHook.sol";
+import {
+    IGatedERC1155ValidationHook
+} from "@continuous-clearing-auction/periphery/validationHooks/GatedERC1155ValidationHook.sol";
 import {Ownable} from "@solady/auth/Ownable.sol";
 import {SSTORE2} from "@solady/utils/SSTORE2.sol";
+import {IGatedValidationHook} from "../../src/interfaces/IGatedValidationHook.sol";
 import {IMaxBidPriceValidationHook} from "../../src/interfaces/IMaxBidPriceValidationHook.sol";
 import {IUmiaValidationHook} from "../../src/interfaces/IUmiaValidationHook.sol";
 import {UmiaValidationHook} from "../../src/periphery/UmiaValidationHook.sol";
@@ -211,6 +218,14 @@ contract UmiaValidationHookTest is Test {
             _packStep(5_000_000, 100) // step 2: blocks 300-400
         );
         return new MockCCA(data, 100);
+    }
+
+    function _deployThreeStepHook() internal returns (UmiaValidationHook hook2) {
+        hook2 = new UmiaValidationHook(admin, address(reclaim), address(0));
+        MockCCA cca2 = _deployThreeStepCCA();
+
+        vm.prank(admin);
+        hook2.setCCA(address(cca2));
     }
 
     function _createProofForUser(address _user) internal view returns (bytes memory) {
@@ -1578,13 +1593,25 @@ contract UmiaValidationHookTest is Test {
         assertTrue(hook.supportsInterface(type(IValidationHook).interfaceId));
         assertTrue(hook.supportsInterface(type(IUmiaValidationHook).interfaceId));
         assertTrue(hook.supportsInterface(type(IMaxBidPriceValidationHook).interfaceId));
+        assertTrue(hook.supportsInterface(type(IGatedValidationHook).interfaceId));
     }
 
-    /// @dev Integrators discover the hook by these IDs, so a change to either interface must be
-    ///      a deliberate one: update the constants here and the tables in docs/contracts.
+    /// @dev Integrators discover the hook by these IDs, so a change to any of these interfaces
+    ///      must be a deliberate one: update the constants here and the tables in docs/contracts.
     function test_supportsInterface_idsAreStable() public pure {
         assertEq(type(IUmiaValidationHook).interfaceId, bytes4(0xbff343b3));
         assertEq(type(IMaxBidPriceValidationHook).interfaceId, bytes4(0x2268a4c3));
+        assertEq(type(IGatedValidationHook).interfaceId, bytes4(0x6d417064));
+    }
+
+    /// @dev Our local declaration is only useful while its ID matches the one their UI probes.
+    function test_gatedInterfaceId_matchesUniswap() public pure {
+        assertEq(type(IGatedValidationHook).interfaceId, type(IGatedERC1155ValidationHook).interfaceId);
+    }
+
+    /// @dev A consumer that saw this ID would call `erc1155()` and `tokenId()`, which we lack.
+    function test_supportsInterface_erc1155GateNotClaimed() public view {
+        assertFalse(hook.supportsInterface(type(IBaseERC1155ValidationHook).interfaceId));
     }
 
     /// @dev Must stay byte-identical to Uniswap's MaxBidPriceValidationHook so their tooling
@@ -1618,8 +1645,90 @@ contract UmiaValidationHookTest is Test {
             interfaceId != type(IERC165).interfaceId && interfaceId != type(IValidationHook).interfaceId
                 && interfaceId != type(IUmiaValidationHook).interfaceId
                 && interfaceId != type(IMaxBidPriceValidationHook).interfaceId
+                && interfaceId != type(IGatedValidationHook).interfaceId
         );
         assertFalse(hook.supportsInterface(interfaceId));
+    }
+
+    // ============ Expiration Block ============
+
+    function test_expirationBlock_isLastGatedStepEnd() public view {
+        assertEq(hook.expirationBlock(), step0End);
+    }
+
+    function test_expirationBlock_zeroBeforeSetCCA() public {
+        UmiaValidationHook freshHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+
+        assertEq(freshHook.expirationBlock(), 0);
+    }
+
+    function test_expirationBlock_zeroWhenNoStepEnabled() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        assertEq(hook2.expirationBlock(), 0);
+    }
+
+    /// @dev An enabled step with no providers and no permit lets everyone bid (see validate).
+    function test_expirationBlock_ignoresEnabledButUngatedStep() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        vm.prank(admin);
+        hook2.enableStep(1, _emptyHashes(), _emptyIds());
+
+        assertEq(hook2.expirationBlock(), 0);
+    }
+
+    function test_expirationBlock_countsPermitOnlyStep() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        vm.startPrank(admin);
+        hook2.enableStep(1, _emptyHashes(), _emptyIds());
+        hook2.enableStepPermit(1);
+        vm.stopPrank();
+
+        assertEq(hook2.expirationBlock(), 300);
+    }
+
+    function test_expirationBlock_tracksHighestGatedStep() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        vm.startPrank(admin);
+        hook2.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("provider-1"));
+        hook2.enableStep(1, _singleHash(PROVIDER_HASH_2), _singleId("provider-2"));
+        assertEq(hook2.expirationBlock(), 300);
+
+        hook2.disableStep(1);
+        assertEq(hook2.expirationBlock(), 200);
+
+        hook2.disableStep(0);
+        assertEq(hook2.expirationBlock(), 0);
+        vm.stopPrank();
+    }
+
+    function test_expirationBlock_dropsStepWhenPermitDisabled() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        vm.startPrank(admin);
+        hook2.enableStep(0, _emptyHashes(), _emptyIds());
+        hook2.enableStepPermit(0);
+        assertEq(hook2.expirationBlock(), 200);
+
+        hook2.disableStepPermit(0);
+        assertEq(hook2.expirationBlock(), 0);
+        vm.stopPrank();
+    }
+
+    /// @dev Their UI compares it against the current block, so it must not track the live step.
+    function test_expirationBlock_constantAsAuctionAdvances() public {
+        UmiaValidationHook hook2 = _deployThreeStepHook();
+
+        vm.prank(admin);
+        hook2.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("provider-1"));
+
+        vm.roll(150);
+        assertEq(hook2.expirationBlock(), 200);
+        vm.roll(350);
+        assertEq(hook2.expirationBlock(), 200);
     }
 
     // ============ Stale Step Fallback ============

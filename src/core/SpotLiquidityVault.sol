@@ -75,6 +75,10 @@ contract SpotLiquidityVault is ISpotLiquidityVault, IUnlockCallback, ReentrancyG
     ///         via the hook's `increaseCardinalityNext`.
     uint16 internal constant INITIAL_ORACLE_CARDINALITY = 100;
 
+    /// @notice Coarse-ring seed. Small so the grow fits under Base's 2^24 per-tx gas cap; the cron
+    ///         grows it to full span after.
+    uint16 internal constant INITIAL_COARSE_ORACLE_CARDINALITY = 100;
+
     // ─────────────────────────────────────────────────────────
     // Immutables
     // ─────────────────────────────────────────────────────────
@@ -237,6 +241,8 @@ contract SpotLiquidityVault is ISpotLiquidityVault, IUnlockCallback, ReentrancyG
         // guard's "full window" predicate stays false indefinitely — disabling protection on
         // exactly the highest-value targets (first market bootstrap).
         IUmiaHook(hook).increaseCardinalityNext(_poolKey(), INITIAL_ORACLE_CARDINALITY);
+
+        IUmiaHook(hook).increaseCoarseCardinalityNext(_poolKey(), INITIAL_COARSE_ORACLE_CARDINALITY);
 
         // Snapshot for the Deposit event, which reports what the pool absorbed rather than what
         // the LBP handed over. A freshly initialized pool has no fees to take back, so the fold

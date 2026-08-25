@@ -2230,6 +2230,13 @@ export const umiaHookAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'COARSE_INTERVAL',
+    outputs: [{ name: '', internalType: 'uint32', type: 'uint32' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'INITIAL_OWNER',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
     stateMutability: 'view',
@@ -2551,9 +2558,39 @@ export const umiaHookAbi = [
   },
   {
     type: 'function',
+    inputs: [{ name: '', internalType: 'PoolId', type: 'bytes32' }],
+    name: 'coarseOracleStates',
+    outputs: [
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinality', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
     inputs: [],
     name: 'factory',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      { name: 'id', internalType: 'PoolId', type: 'bytes32' },
+      { name: 'index', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'getCoarseObservation',
+    outputs: [
+      { name: 'blockTimestamp', internalType: 'uint32', type: 'uint32' },
+      { name: 'tickCumulative', internalType: 'int48', type: 'int48' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128',
+        internalType: 'uint144',
+        type: 'uint144',
+      },
+      { name: 'initialized', internalType: 'bool', type: 'bool' },
+    ],
     stateMutability: 'view',
   },
   {
@@ -2639,6 +2676,30 @@ export const umiaHookAbi = [
   {
     type: 'function',
     inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'cardinalityNext', internalType: 'uint16', type: 'uint16' },
+    ],
+    name: 'increaseCoarseCardinalityNext',
+    outputs: [
+      { name: 'cardinalityNextOld', internalType: 'uint16', type: 'uint16' },
+      { name: 'cardinalityNextNew', internalType: 'uint16', type: 'uint16' },
+    ],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [
       { name: '_factory', internalType: 'address', type: 'address' },
       {
         name: '_poolManager',
@@ -2668,6 +2729,34 @@ export const umiaHookAbi = [
       { name: 'secondsAgos', internalType: 'uint32[]', type: 'uint32[]' },
     ],
     name: 'observe',
+    outputs: [
+      { name: 'tickCumulatives', internalType: 'int48[]', type: 'int48[]' },
+      {
+        name: 'secondsPerLiquidityCumulativeX128s',
+        internalType: 'uint144[]',
+        type: 'uint144[]',
+      },
+    ],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [
+      {
+        name: 'key',
+        internalType: 'struct PoolKey',
+        type: 'tuple',
+        components: [
+          { name: 'currency0', internalType: 'Currency', type: 'address' },
+          { name: 'currency1', internalType: 'Currency', type: 'address' },
+          { name: 'fee', internalType: 'uint24', type: 'uint24' },
+          { name: 'tickSpacing', internalType: 'int24', type: 'int24' },
+          { name: 'hooks', internalType: 'contract IHooks', type: 'address' },
+        ],
+      },
+      { name: 'secondsAgos', internalType: 'uint32[]', type: 'uint32[]' },
+    ],
+    name: 'observeLong',
     outputs: [
       { name: 'tickCumulatives', internalType: 'int48[]', type: 'int48[]' },
       {
@@ -5641,6 +5730,13 @@ export const umiaValidationHookAbi = [
     name: 'enableStepPermit',
     outputs: [],
     stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'expirationBlock',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
   },
   {
     type: 'function',
