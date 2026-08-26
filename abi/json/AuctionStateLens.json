@@ -1,0 +1,98 @@
+[
+  {
+    "type": "function",
+    "name": "revertWithState",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "state",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct AuctionState",
+        "components": [
+          {
+            "name": "checkpoint",
+            "type": "tuple",
+            "internalType": "struct Checkpoint",
+            "components": [
+              {
+                "name": "clearingPrice",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "currencyRaisedAtClearingPriceQ96X7",
+                "type": "uint256",
+                "internalType": "ValueX7"
+              },
+              {
+                "name": "cumulativeMpsPerPrice",
+                "type": "uint256",
+                "internalType": "uint256"
+              },
+              {
+                "name": "cumulativeMps",
+                "type": "uint24",
+                "internalType": "uint24"
+              },
+              {
+                "name": "prev",
+                "type": "uint64",
+                "internalType": "uint64"
+              },
+              {
+                "name": "next",
+                "type": "uint64",
+                "internalType": "uint64"
+              }
+            ]
+          },
+          {
+            "name": "currencyRaised",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "totalCleared",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "isGraduated",
+            "type": "bool",
+            "internalType": "bool"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "error",
+    "name": "CheckpointFailed",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidRevertReasonLength",
+    "inputs": []
+  }
+]

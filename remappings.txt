@@ -1,0 +1,10 @@
+@openzeppelin/=lib/openzeppelin-contracts/
+@solady=lib/solady/src/
+@liquidity-launcher/=lib/liquidity-launcher/src/
+@continuous-clearing-auction=lib/continuous-clearing-auction/src/
+@uniswap/v4-core=lib/v4-core/
+@uniswap/v4-periphery=lib/v4-periphery/
+v4-periphery/=lib/v4-periphery/
+@uniswap/permit2=lib/v4-periphery/lib/permit2/
+@blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
+@metavest/=lib/metavest/src/

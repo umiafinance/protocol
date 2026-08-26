@@ -1,0 +1,213 @@
+[
+  {
+    "type": "constructor",
+    "inputs": [
+      {
+        "name": "_hub",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "HUB",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IUmiaHub"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "executeProposal",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "marketId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "executionPayload",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "validatePayload",
+    "inputs": [
+      {
+        "name": "executionPayload",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "event",
+    "name": "GovernanceActionExecuted",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "marketId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "actionType",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum GovernanceTypes.ActionType"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "GovernancePlanExecuted",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "marketId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "proposalId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "planHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "ImplementationOptOut",
+    "inputs": [
+      {
+        "name": "venture",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidAction",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidActionVersion",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidExecutor",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidParams",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayload",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidPayloadEncoding",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidVersion",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LiquidationActive",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "LiquidationMustBeFinal",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OnlyMarketCore",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyActions",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UnsupportedAction",
+    "inputs": []
+  }
+]

@@ -1,0 +1,17 @@
+[
+  {
+    "type": "error",
+    "name": "InvalidPayloadEncoding",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidVersion",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "TooManyActions",
+    "inputs": []
+  }
+]

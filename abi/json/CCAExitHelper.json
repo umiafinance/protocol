@@ -1,0 +1,25 @@
+[
+  {
+    "type": "function",
+    "name": "exitOutbidBid",
+    "inputs": [
+      {
+        "name": "auction",
+        "type": "address",
+        "internalType": "contract IContinuousClearingAuction"
+      },
+      {
+        "name": "bidId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lastFullyFilledCheckpointBlock",
+        "type": "uint64",
+        "internalType": "uint64"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  }
+]
