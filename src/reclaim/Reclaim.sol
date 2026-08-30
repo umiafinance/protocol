@@ -77,7 +77,15 @@ contract Reclaim {
 
     event EpochAdded(Epoch epoch);
     event ProofUsed(bytes32 indexed identifier);
+    /// @notice Emitted when `transferOwnership` nominates a new witness-set administrator.
+    event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner);
+    /// @notice Emitted when the nominee accepts and ownership actually moves.
+    event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+
     address public owner;
+
+    /// @notice Nominee from step 1 of the two-step ownership handover. Zero when none is pending.
+    address public pendingOwner;
 
     /**
      * Constructor to initialize the Reclaim contract
@@ -105,6 +113,32 @@ contract Reclaim {
     modifier onlyOwner() {
         require(owner == msg.sender, "Only Owner");
         _;
+    }
+
+    // ownership functions ---
+
+    /**
+     * @notice Step 1 of 2: nominate a new witness-set administrator.
+     * @dev The witness set is the trust anchor for every proof this contract accepts, so the deploy
+     *      EOA must be able to hand that power to a timelock or multisig. The handover is two-step so a
+     *      mistyped address cannot permanently strand the epoch registry, and `pendingOwner` can be
+     *      cleared by nominating `address(0)`.
+     */
+    function transferOwnership(address newOwner) external onlyOwner {
+        pendingOwner = newOwner;
+        emit OwnershipTransferStarted(owner, newOwner);
+    }
+
+    /**
+     * @notice Step 2 of 2: the nominee claims ownership.
+     * @dev Must be called by the nominee itself, which proves the address is controlled and can transact.
+     */
+    function acceptOwnership() external {
+        require(msg.sender == pendingOwner, "Not pending owner");
+        address previousOwner = owner;
+        owner = msg.sender;
+        pendingOwner = address(0);
+        emit OwnershipTransferred(previousOwner, msg.sender);
     }
 
     // epoch functions ---
@@ -166,14 +200,16 @@ contract Reclaim {
     }
 
     /**
-     * Call the function to assert
-     * the validity of several claims proofs
+     * Validate a proof without touching storage.
+     *
+     * @dev Split out of `verifyProof` so a consumer can verify a proof against its *own* replay ledger.
+     *      `verifyProof` is permissionless and burns `usedProofs[identifier]`, which means any observer
+     *      can copy a pending proof out of the mempool, burn it first, and permanently lock the rightful
+     *      submitter out — the identifier is `keccak(provider\nparameters\ncontext)` and carries no nonce,
+     *      so re-attesting the same identity reproduces an already-burned identifier. Consumers that
+     *      maintain their own consumption mapping should call this and not `verifyProof`.
      */
-    function verifyProof(Proof memory proof) public {
-        // check if the proof has already been used
-        bytes32 proofIdentifier = proof.signedClaim.claim.identifier;
-        require(!usedProofs[proofIdentifier], "Proof already used");
-
+    function checkProof(Proof memory proof) public view {
         // create signed claim using claimData and signature.
         require(proof.signedClaim.signatures.length > 0, "No signatures");
         Claims.SignedClaim memory signed = Claims.SignedClaim(proof.signedClaim.claim, proof.signedClaim.signatures);
@@ -211,6 +247,18 @@ contract Reclaim {
             }
             require(found, "Signature not appropriate");
         }
+    }
+
+    /**
+     * Call the function to assert
+     * the validity of several claims proofs
+     */
+    function verifyProof(Proof memory proof) public {
+        // check if the proof has already been used
+        bytes32 proofIdentifier = proof.signedClaim.claim.identifier;
+        require(!usedProofs[proofIdentifier], "Proof already used");
+
+        checkProof(proof);
 
         // mark the proof as used
         usedProofs[proofIdentifier] = true;
@@ -248,14 +296,5 @@ contract Reclaim {
         }
 
         emit EpochAdded(epochs[epochs.length - 1]);
-    }
-
-    // internal code -----
-
-    function uintDifference(uint256 a, uint256 b) internal pure returns (uint256) {
-        if (a > b) {
-            return a - b;
-        }
-        return b - a;
     }
 }
