@@ -6,6 +6,7 @@ import {TimelockController} from "@openzeppelin/contracts/governance/TimelockCon
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 import {UmiaHub} from "../src/core/UmiaHub.sol";
+import {Reclaim} from "../src/reclaim/Reclaim.sol";
 
 /// @title DeployTimelock
 /// @notice Deploys a stock OZ TimelockController and makes it the protocol owner.
@@ -32,6 +33,7 @@ import {UmiaHub} from "../src/core/UmiaHub.sol";
 ///         - TIMELOCK_MIN_DELAY          seconds, default 2 days
 ///         - TIMELOCK_EXECUTOR           default address(0) = open execution
 ///         - VENTURE_BEACON_ADDRESS      also transfer the beacon (optional)
+///         - RECLAIM_ADDRESS             also nominate the timelock as Reclaim owner (optional)
 ///         - TIMELOCK_ALLOW_EOA_PROPOSER allow a proposer with no bytecode (default false)
 ///         - TIMELOCK_ALLOW_SHORT_DELAY  allow a delay below 1 hour (default false)
 contract DeployTimelock is Script {
@@ -42,6 +44,7 @@ contract DeployTimelock is Script {
         uint256 minDelay;
         address executor;
         address beacon;
+        address reclaim;
         bool allowEoaProposer;
         bool allowShortDelay;
     }
@@ -55,6 +58,7 @@ contract DeployTimelock is Script {
                 minDelay: vm.envOr("TIMELOCK_MIN_DELAY", uint256(2 days)),
                 executor: vm.envOr("TIMELOCK_EXECUTOR", address(0)),
                 beacon: vm.envOr("VENTURE_BEACON_ADDRESS", address(0)),
+                reclaim: vm.envOr("RECLAIM_ADDRESS", address(0)),
                 allowEoaProposer: vm.envOr("TIMELOCK_ALLOW_EOA_PROPOSER", false),
                 allowShortDelay: vm.envOr("TIMELOCK_ALLOW_SHORT_DELAY", false)
             })
@@ -80,6 +84,14 @@ contract DeployTimelock is Script {
                 UpgradeableBeacon(cfg.beacon).owner() == currentOwner,
                 "DEPLOYER_PRIVATE_KEY is not the venture beacon owner"
             );
+        }
+        // Reclaim's owner controls `addNewEpoch`, i.e. the witness set every zkTLS proof in the
+        // protocol is checked against. Leaving that with the deploy EOA makes the EOA the trust
+        // anchor for participation gating, which defeats the point of moving the hub behind a
+        // timelock, so the same adoption run hands it over too.
+        if (cfg.reclaim != address(0)) {
+            require(cfg.reclaim.code.length > 0, "RECLAIM_ADDRESS has no bytecode on this chain");
+            require(Reclaim(cfg.reclaim).owner() == currentOwner, "DEPLOYER_PRIVATE_KEY is not the Reclaim owner");
         }
 
         console.log("Deploying TimelockController...");
@@ -107,9 +119,19 @@ contract DeployTimelock is Script {
         if (cfg.beacon != address(0)) {
             UpgradeableBeacon(cfg.beacon).transferOwnership(address(timelock));
         }
+        // Nomination only: Reclaim uses two-step ownership and `acceptOwnership` must come from the
+        // nominee, so the timelock has to schedule that call itself. Until it does, `owner` is still
+        // the deploy EOA — the handover is not complete when this script returns.
+        if (cfg.reclaim != address(0)) {
+            Reclaim(cfg.reclaim).transferOwnership(address(timelock));
+        }
         vm.stopBroadcast();
 
         require(hub.owner() == address(timelock), "hub ownership transfer failed");
+        if (cfg.reclaim != address(0)) {
+            require(Reclaim(cfg.reclaim).pendingOwner() == address(timelock), "Reclaim nomination failed");
+            console.log("Reclaim pending owner (timelock must call acceptOwnership):", address(timelock));
+        }
 
         console.log("TimelockController deployed at:", address(timelock));
         console.log("UmiaHub owner:", hub.owner());
