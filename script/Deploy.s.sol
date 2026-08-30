@@ -37,8 +37,15 @@ contract Deploy is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
-        uint256 marketSignerKey = vm.envOr("MARKET_CREATION_SIGNER_KEY", uint256(0));
-        address marketSigner = marketSignerKey != 0 ? vm.addr(marketSignerKey) : deployer;
+        address marketSigner = _resolveMarketSigner(deployer);
+
+        // Resolve every deliberate-choice gate *before* opening the broadcast. These reads are pure
+        // configuration validation; leaving them inside the broadcast meant a forgotten export was
+        // only caught after the hub, market core, hook and factories had already been deployed and
+        // paid for, leaving a half-configured protocol on-chain that the next run cannot reuse.
+        address vestingAdmin = _requireRoleDecision("VESTING_ADMIN", "no key can terminate or reissue vesting grants.");
+        address vetoGuardian =
+            _requireRoleDecision("VETO_GUARDIAN", "only the owner can trip decision-market circuit breakers.");
 
         console.log("Deploying Umia contracts...");
         console.log("Deployer:", deployer);
@@ -144,6 +151,11 @@ contract Deploy is Script {
         // transformation when mining, so the address it predicts matches what CreateX deploys.
         address deployerEOA = vm.envAddress("UMIA_HOOK_DEPLOYER");
         bytes32 hookSalt = vm.envBytes32("UMIA_HOOK_SALT");
+        // CreateX is a pre-deployed singleton, not something this script deploys. On a chain that has
+        // not been seeded with it, the raw `.call` below hits an EOA-shaped address: the call
+        // *succeeds* with empty returndata, `abi.decode` then reverts with a bare panic, and the
+        // failure reads like a mining/salt bug instead of a missing dependency.
+        require(CREATE_X.code.length > 0, "Deploy: CreateX not deployed on this chain");
         bytes32 hookGuardedSalt = keccak256(abi.encodePacked(hookSalt));
         bytes memory hookCreationCode = abi.encodePacked(type(UmiaHook).creationCode, abi.encode(deployerEOA));
         address predictedHook = HookMiner.computeAddress(CREATE_X, uint256(hookGuardedSalt), hookCreationCode);
@@ -216,7 +228,7 @@ contract Deploy is Script {
         hub.setProtocolFeeRecipient(deployer); // swap fees + protocol cuts default in initialize()
         console.log("Hub configured with all contract addresses");
 
-        _configureOperationalRoles(hub);
+        _configureOperationalRoles(hub, vestingAdmin, vetoGuardian);
 
         address usdc = vm.envOr("USDC_ADDRESS", address(0));
         if (usdc != address(0)) {
@@ -254,20 +266,36 @@ contract Deploy is Script {
     /// @dev Wires the Hub's operational roles. Both are deliberately distinct from the owner so an
     ///      ops key is never the upgrade key, and both are `address(0)` after `initialize`, which
     ///      silently means "capability off". That is a safe default but rarely the intended one, so
-    ///      a deployment has to state what it wants instead of inheriting it by omission.
-    function _configureOperationalRoles(UmiaHub hub) internal {
-        address vestingAdmin = _requireRoleDecision("VESTING_ADMIN", "no key can terminate or reissue vesting grants.");
+    ///      a deployment has to state what it wants instead of inheriting it by omission. The
+    ///      decisions themselves are resolved in `run()` before the broadcast opens; this only
+    ///      applies them.
+    function _configureOperationalRoles(UmiaHub hub, address vestingAdmin, address vetoGuardian) internal {
         if (vestingAdmin != address(0)) {
             hub.setVestingAdmin(vestingAdmin);
             console.log("Vesting admin set:", vestingAdmin);
         }
 
-        address vetoGuardian =
-            _requireRoleDecision("VETO_GUARDIAN", "only the owner can trip decision-market circuit breakers.");
         if (vetoGuardian != address(0)) {
             hub.setVetoGuardian(vetoGuardian);
             console.log("Veto guardian set:", vetoGuardian);
         }
+    }
+
+    /// @dev Resolves the hub's market-creation signer. Prefer `MARKET_CREATION_SIGNER`, an address:
+    ///      the hub only ever compares recovered signatures against it, so the deploy process has no
+    ///      need for the private key and should not be handed one. `MARKET_CREATION_SIGNER_KEY`
+    ///      remains supported for existing runbooks, but putting a live signing key in the deploy
+    ///      environment widens its exposure to every shell, CI log and process that run sees.
+    function _resolveMarketSigner(address deployer) internal view returns (address marketSigner) {
+        marketSigner = vm.envOr("MARKET_CREATION_SIGNER", address(0));
+        if (marketSigner != address(0)) return marketSigner;
+
+        uint256 marketSignerKey = vm.envOr("MARKET_CREATION_SIGNER_KEY", uint256(0));
+        if (marketSignerKey != 0) {
+            console.log("MARKET_CREATION_SIGNER_KEY is set; prefer MARKET_CREATION_SIGNER (address only).");
+            return vm.addr(marketSignerKey);
+        }
+        return deployer;
     }
 
     /// @dev Reads an operational role from `envKey`. Leaving it unset is allowed but must be
