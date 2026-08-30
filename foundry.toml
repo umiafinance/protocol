@@ -10,13 +10,37 @@ ignored_warnings_from = ["lib/"]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
+# This array is the authoritative remapping list. `remappings.txt` must stay a byte-for-byte mirror of
+# it (entries only — Foundry's remappings.txt parser has NO comment syntax, so a `#` line there is a
+# hard config error, not a note). That file exists purely for tooling that reads it but not this one
+# (editor Solidity extensions, Slither, other standalone analysers). Foundry MERGES both lists, so an
+# entry present in only one of them still silently joins the build — which is how the file once
+# supplied `v4-periphery/` while omitting the `forge-std/` and `ds-test/` pins the build needs. Add
+# new remappings here first, then mirror them.
+#
+# Do NOT regenerate `remappings.txt` with `forge remappings`. That command also prints the per-context
+# remappings Foundry auto-detects for each vendored library, and writing them to a file promotes them
+# to global scope. Among them is `test/=lib/continuous-clearing-auction/test/`, which would shadow this
+# repository's own `test/` directory.
+
 remappings = [
+    # Pin the test harness globally. Several vendored libraries carry their own nested forge-std /
+    # ds-test copies; with those submodules populated, Foundry's per-context auto-detection resolves
+    # `forge-std/` to a different copy depending on which library a file lives in, and any contract
+    # that ends up inheriting two of them fails to compile with "Identifier already declared". An
+    # explicit global remapping collapses every copy onto the one revision this repo pins.
+    'forge-std/=lib/forge-std/src/',
+    'ds-test/=lib/forge-std/lib/ds-test/src/',
     '@openzeppelin/=lib/openzeppelin-contracts/',
     '@solady=lib/solady/src/',
     '@liquidity-launcher/=lib/liquidity-launcher/src/',
     '@continuous-clearing-auction=lib/continuous-clearing-auction/src/',
     '@uniswap/v4-core=lib/v4-core/',
     '@uniswap/v4-periphery=lib/v4-periphery/',
+    # v4-periphery's own sources import siblings as `v4-periphery/...`. This entry used to live only in
+    # `remappings.txt`, which meant the build depended on a file that had drifted out of sync with this
+    # array; it is declared here so one list is authoritative.
+    'v4-periphery/=lib/v4-periphery/',
     '@uniswap/permit2=lib/v4-periphery/lib/permit2/',
     '@blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/',
     '@metavest/=lib/metavest/src/',
