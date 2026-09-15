@@ -180,6 +180,34 @@ contract HubTimelockTest is Test {
         assertEq(beacon.implementation(), address(v2));
     }
 
+    function test_hubUpgradeWithReinitializerViaTimelock() public {
+        UmiaHubV2 v2 = new UmiaHubV2();
+        bytes memory data =
+            abi.encodeCall(hub.upgradeToAndCall, (address(v2), abi.encodeCall(UmiaHubV2.initializeV2, (42))));
+
+        _schedule(address(hub), data);
+        skip(MIN_DELAY);
+        _execute(address(hub), data);
+
+        assertEq(UmiaHubV2(address(hub)).v2Value(), 42);
+        assertEq(hub.owner(), address(timelock));
+
+        vm.expectRevert();
+        UmiaHubV2(address(hub)).initializeV2(1);
+    }
+
+    function test_marketCoreUpgradeWithReinitializerViaTimelock() public {
+        UmiaMarketCoreV2 v2 = new UmiaMarketCoreV2();
+        bytes memory data =
+            abi.encodeCall(mm.upgradeToAndCall, (address(v2), abi.encodeCall(UmiaMarketCoreV2.initializeV2, (99))));
+
+        _schedule(address(mm), data);
+        skip(MIN_DELAY);
+        _execute(address(mm), data);
+
+        assertEq(UmiaMarketCoreV2(address(mm)).v2Value(), 99);
+    }
+
     // ═════════════════════════════════════════════════════
     //  Veto guardian fast path
     // ═════════════════════════════════════════════════════

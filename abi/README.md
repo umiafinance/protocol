@@ -1,19 +1,23 @@
 # umia-abi
 
-Typed ABIs and raw JSON exports for the Umia smart contracts. Generated from `forge build` output via `wagmi-cli`.
+Typed ABIs, raw JSON exports, and the deployed address book for the Umia smart contracts. ABIs are generated from `forge build` output via `wagmi-cli`; addresses come from the monorepo's `contracts.json`.
 
 > Published to npm as **`umia-abi`** (unscoped). Inside the monorepo it's the `@umia/abi` workspace package — the name is swapped at publish time (see `publish.sh`).
 
 ## Layout
 
-| Path                | What                                                      |
-| ------------------- | --------------------------------------------------------- |
-| `src/contracts.ts`  | Source-of-truth list of contracts whose ABIs we publish   |
-| `src/generated.ts`  | `wagmi generate` output: typed `as const` ABIs            |
-| `src/index.ts`      | Public TS entrypoint                                      |
-| `json/*.json`       | Raw ABI JSON, one file per contract                       |
-| `wagmi.config.ts`   | `wagmi-cli` config                                        |
-| `src/dump-json.ts`  | Extracts `out/*.sol/*.json` → `json/*.json`               |
+| Path                        | What                                                            |
+| --------------------------- | --------------------------------------------------------------- |
+| `src/contracts.ts`          | Source-of-truth list of contracts whose ABIs we publish          |
+| `src/generated.ts`          | `wagmi generate` output: typed `as const` ABIs                   |
+| `src/generated-addresses.ts`| Address book, generated from the monorepo's `contracts.json`     |
+| `src/addresses.ts`          | Typed lookups over the address book                              |
+| `src/index.ts`              | Public TS entrypoint                                             |
+| `json/*.json`               | Raw ABI JSON, one file per contract                              |
+| `addresses.json`            | Raw address book, for non-TS consumers                           |
+| `wagmi.config.ts`           | `wagmi-cli` config                                               |
+| `src/dump-json.ts`          | Extracts `out/*.sol/*.json` → `json/*.json`                      |
+| `src/gen-addresses.ts`      | Extracts `contracts.json` → the address book                     |
 
 ## Use
 
@@ -23,11 +27,20 @@ From inside the monorepo:
 import { umiaHubAbi } from "@umia/abi";
 ```
 
-From outside (`bun add umia-abi`), grab the raw JSON:
+From outside (`bun add umia-abi`):
+
+```ts
+import { umiaHubAbi, getContractAddress } from "umia-abi";
+
+const hub = getContractAddress("mainnet", 8453, "hub");
+```
+
+The package is published as compiled ESM with `.d.ts` alongside, so plain Node
+works. Raw JSON is available too, for non-TS clients:
 
 ```ts
 import umiaHub from "umia-abi/json/UmiaHub.json";
-// or via fetch / fs in non-TS clients
+import addresses from "umia-abi/addresses.json";
 ```
 
 ## Regenerate
@@ -38,7 +51,28 @@ After changing any of the contracts listed in `src/contracts.ts`:
 just abi
 ```
 
-This runs `wagmi generate` (which calls `forge build` internally) and then dumps the raw JSON. Commit the regenerated `src/generated.ts` and `json/*.json` alongside the contract change.
+This runs `wagmi generate` (which calls `forge build` internally), dumps the raw JSON, and regenerates the address book. Commit the regenerated `src/generated.ts`, `json/*.json`, `addresses.json`, and `src/generated-addresses.ts` alongside the contract change.
+
+## Addresses
+
+`addresses.json` and `src/generated-addresses.ts` are generated from the
+monorepo's root `contracts.json`, narrowed to what's useful publicly: the
+`testnet` and `mainnet` environments only (devnet is an internal anvil fork that
+resets without warning), minus operational fields like `anvilUrl` and
+`maxReorgDepth`.
+
+```ts
+import { addresses, getChainAddressesById, getContractAddress } from "umia-abi";
+
+getContractAddress("mainnet", 8453, "hub");        // "0x120dbC…" | null
+getChainAddressesById("mainnet", 8453)?.startBlock; // indexer start height
+addresses.mainnet.base.umia.ccaFactory;             // literal-typed
+```
+
+Regenerate with `bun run addresses` (or `just abi`, which includes it). CI
+re-derives it on any `contracts.json` change via
+`smart-contracts/check-addresses.sh`, so a redeploy that updates `contracts.json`
+without regenerating fails the build.
 
 ## Adding a contract
 
@@ -71,14 +105,17 @@ The three lists exist because solc doesn't always bubble errors from libraries a
    just publish-abi
    ```
 
-The recipe refuses to publish if `smart-contracts/abi/` has uncommitted changes or if `just abi` would produce a diff (i.e. the committed ABIs are stale). It publishes the package as **`umia-abi`** with public access (the `@umia/abi` workspace name is swapped to the unscoped `umia-abi` only during publish, then reverted — see `publish.sh`).
+The recipe refuses to publish if `smart-contracts/abi/` has uncommitted changes or if `just abi` would produce a diff (i.e. the committed ABIs are stale). It then typechecks, compiles `src/` to `dist/`, and publishes as **`umia-abi`** with public access.
+
+Two manifest fields are publish-time only, applied by `publish-manifest.ts` and reverted by a trap in `publish.sh`: the `@umia/abi` workspace name becomes the unscoped `umia-abi`, and the entrypoints move from `src/*.ts` to `dist/*.js`. In-repo consumers resolve the TypeScript sources directly; published consumers can't, because Node refuses to type-strip inside `node_modules`.
 
 Consumers install with `bun add umia-abi` (or `pnpm` / `npm`) and import either the typed TS barrel or the raw JSON files:
 
 ```ts
-// typed (viem / wagmi-friendly, `as const` ABIs)
-import { umiaHubAbi, allErrorsAbi } from "umia-abi";
+// typed (viem / wagmi-friendly, `as const` ABIs) + addresses
+import { umiaHubAbi, allErrorsAbi, getContractAddress } from "umia-abi";
 
 // raw JSON (any TS / JS / Node setup)
 import umiaHub from "umia-abi/json/UmiaHub.json";
+import addresses from "umia-abi/addresses.json";
 ```

@@ -31,6 +31,19 @@ interface IVenture {
         uint256 createdAt;
     }
 
+    enum AllowanceSourceKind {
+        NONE,
+        PEGGED,
+        ERC4626
+    }
+
+    struct AllowanceSource {
+        address underlying;
+        AllowanceSourceKind kind;
+        uint8 sourceDecimals;
+        uint8 underlyingDecimals;
+    }
+
     // ─────────────────────────────────────────────────────────
     // Errors
     // ─────────────────────────────────────────────────────────
@@ -46,6 +59,8 @@ interface IVenture {
     error TradingNotPaused();
     error TradingPauseNotExpired();
     error TradingPauseDurationTooLong();
+    error UnknownAllowanceSource();
+    error InvalidAllowanceSource();
 
     // ─────────────────────────────────────────────────────────
     // Events
@@ -56,6 +71,10 @@ interface IVenture {
     event MonthlyAllowanceUpdated(address indexed token, uint256 amount);
     event MonthlyAllowanceWithdrawn(address indexed token, address indexed to, uint256 amount);
     event AllowanceSet(address indexed token, address indexed spender, uint256 amount);
+    event AllowanceSourceSet(address indexed underlying, address indexed source, uint8 kind);
+    event MonthlyAllowanceWithdrawnFrom(
+        address indexed underlying, address indexed source, address indexed to, uint256 assets, uint256 amount
+    );
     event DocumentUploaded(uint256 indexed docId, string name, string uri);
     event LiquidatorAuthorized(address indexed liquidator);
     event TradingStarted(address indexed caller);
@@ -77,6 +96,12 @@ interface IVenture {
     function tradingPauseDeadline() external view returns (uint256);
     function liquidationActive() external view returns (bool);
     function authorizedLiquidator() external view returns (address);
+    function allowanceSources(address source)
+        external
+        view
+        returns (address underlying, AllowanceSourceKind kind, uint8 sourceDecimals, uint8 underlyingDecimals);
+    function allowanceRemaining(address underlying) external view returns (uint256);
+    function allowanceSourceCount(address underlying) external view returns (uint256);
 
     // ─────────────────────────────────────────────────────────
     // State-Changing Functions
@@ -97,6 +122,8 @@ interface IVenture {
     function updateMonthlyAllowance(address _token, uint256 _amount) external;
     function setAllowance(address _token, address _spender, uint256 _amount) external;
     function withdrawMonthlyAllowance(address _token, address _to, uint256 _amount) external;
+    function setAllowanceSource(address _source, address _underlying, AllowanceSourceKind _sourceKind) external;
+    function withdrawMonthlyAllowanceFrom(address _source, address _to, uint256 _assets) external;
     function uploadDocument(string calldata _name, string calldata _uri) external;
     function setLiquidator(address _liquidator) external;
     function setMinMarketStake(uint256 _amount) external;

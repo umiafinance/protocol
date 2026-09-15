@@ -77,8 +77,9 @@ contract Deploy is Script {
         console.log("UmiaMarketStake deployed at:", address(marketStake));
 
         // Deploy CCA Factory (skip if CCA_FACTORY env points at an existing one).
-        // Skippable so we can reuse the canonical multi-chain factory
-        // (0xCCccCcCAE7503...) rather than redeploying it on every stack rebuild.
+        // For new Nitro/Orbit deployments, use the v2.1.0 factory
+        // (0x000000001F26a0044BaA66024e7b6599c61963F8), after verifying it on the
+        // target chain. v2.0.0 auctions lack generalized ArbSys detection.
         address existingCcaFactory = vm.envOr("CCA_FACTORY", address(0));
         ContinuousClearingAuctionFactory ccaFactory;
         if (existingCcaFactory != address(0)) {

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  // No declaration maps: they point at src/, which the published package omits.
+  "compilerOptions": { "declarationMap": false },
+  "exclude": ["node_modules", "dist", "src/dump-json.ts", "src/gen-addresses.ts"]
+}

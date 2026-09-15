@@ -1,0 +1,432 @@
+{
+  "storage": [
+    {
+      "label": "HUB",
+      "slot": 0,
+      "offset": 0,
+      "type": "t_contract(IUmiaHub)"
+    },
+    {
+      "label": "marketCounter",
+      "slot": 1,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "proposalCounter",
+      "slot": 2,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "DOMAIN_SEPARATOR",
+      "slot": 3,
+      "offset": 0,
+      "type": "t_bytes32"
+    },
+    {
+      "label": "activeUnsettledMarketCount",
+      "slot": 4,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "_pools",
+      "slot": 5,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(Pool)_storage)"
+    },
+    {
+      "label": "_markets",
+      "slot": 6,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(MarketData)_storage)"
+    },
+    {
+      "label": "_settle",
+      "slot": 7,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(SettleAcct)_storage)"
+    },
+    {
+      "label": "_proposals",
+      "slot": 8,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(ProposalData)_storage)"
+    },
+    {
+      "label": "marketCreationNonces",
+      "slot": 9,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "proposalToMarket",
+      "slot": 10,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "label": "_hasClaimed",
+      "slot": 11,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_mapping(t_address,t_bool))"
+    },
+    {
+      "label": "activeMarketByVenture",
+      "slot": 12,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "label": "balanceOf",
+      "slot": 13,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_mapping(t_uint256,t_uint256))"
+    },
+    {
+      "label": "totalSupply",
+      "slot": 14,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_uint256)"
+    },
+    {
+      "label": "swapNonces",
+      "slot": 15,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "__gap",
+      "slot": 16,
+      "offset": 0,
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "label": "address",
+      "numberOfBytes": 20
+    },
+    "t_array(t_uint256)50_storage": {
+      "label": "uint256[50]",
+      "numberOfBytes": 1600,
+      "base": "t_uint256"
+    },
+    "t_array(t_uint256)dyn_storage": {
+      "label": "uint256[]",
+      "numberOfBytes": 32,
+      "base": "t_uint256"
+    },
+    "t_bool": {
+      "label": "bool",
+      "numberOfBytes": 1
+    },
+    "t_bytes32": {
+      "label": "bytes32",
+      "numberOfBytes": 32
+    },
+    "t_bytes_storage": {
+      "label": "bytes",
+      "numberOfBytes": 32
+    },
+    "t_contract(IUmiaHub)": {
+      "label": "contract IUmiaHub",
+      "numberOfBytes": 20
+    },
+    "t_mapping(t_address,t_bool)": {
+      "label": "mapping(address => bool)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_mapping(t_uint256,t_uint256))": {
+      "label": "mapping(address => mapping(uint256 => uint256))",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_mapping(t_uint256,t_uint256)"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint256,t_mapping(t_address,t_bool))": {
+      "label": "mapping(uint256 => mapping(address => bool))",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_mapping(t_address,t_bool)"
+    },
+    "t_mapping(t_uint256,t_struct(MarketData)_storage)": {
+      "label": "mapping(uint256 => struct MarketData)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(MarketData)_storage"
+    },
+    "t_mapping(t_uint256,t_struct(Pool)_storage)": {
+      "label": "mapping(uint256 => struct Pool)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(Pool)_storage"
+    },
+    "t_mapping(t_uint256,t_struct(ProposalData)_storage)": {
+      "label": "mapping(uint256 => struct ProposalData)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(ProposalData)_storage"
+    },
+    "t_mapping(t_uint256,t_struct(SettleAcct)_storage)": {
+      "label": "mapping(uint256 => struct SettleAcct)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(SettleAcct)_storage"
+    },
+    "t_mapping(t_uint256,t_uint256)": {
+      "label": "mapping(uint256 => uint256)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_uint256"
+    },
+    "t_string_storage": {
+      "label": "string",
+      "numberOfBytes": 32
+    },
+    "t_struct(MarketData)_storage": {
+      "label": "struct MarketData",
+      "numberOfBytes": 128,
+      "members": [
+        {
+          "label": "id",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "ventureId",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "tradingStart",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_uint64"
+        },
+        {
+          "label": "tradingEnd",
+          "slot": 2,
+          "offset": 8,
+          "type": "t_uint64"
+        },
+        {
+          "label": "winningThresholdBps",
+          "slot": 2,
+          "offset": 16,
+          "type": "t_uint32"
+        },
+        {
+          "label": "executionDelay",
+          "slot": 2,
+          "offset": 20,
+          "type": "t_uint32"
+        },
+        {
+          "label": "swapFeeBps",
+          "slot": 2,
+          "offset": 24,
+          "type": "t_uint16"
+        },
+        {
+          "label": "protocolCutBps",
+          "slot": 2,
+          "offset": 26,
+          "type": "t_uint16"
+        },
+        {
+          "label": "settled",
+          "slot": 2,
+          "offset": 28,
+          "type": "t_bool"
+        },
+        {
+          "label": "executed",
+          "slot": 2,
+          "offset": 29,
+          "type": "t_bool"
+        },
+        {
+          "label": "proposalIds",
+          "slot": 3,
+          "offset": 0,
+          "type": "t_array(t_uint256)dyn_storage"
+        }
+      ]
+    },
+    "t_struct(Pool)_storage": {
+      "label": "struct Pool",
+      "numberOfBytes": 224,
+      "members": [
+        {
+          "label": "cpmm",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_struct(State)_storage"
+        },
+        {
+          "label": "accruedFeeVenture",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "accruedFeeMoney",
+          "slot": 3,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "userVirtualVentureSupply",
+          "slot": 4,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "userVirtualMoneySupply",
+          "slot": 5,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "totalLiquidityShares",
+          "slot": 6,
+          "offset": 0,
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_struct(ProposalData)_storage": {
+      "label": "struct ProposalData",
+      "numberOfBytes": 96,
+      "members": [
+        {
+          "label": "isNoOp",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_bool"
+        },
+        {
+          "label": "title",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_string_storage"
+        },
+        {
+          "label": "executionPayload",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_bytes_storage"
+        }
+      ]
+    },
+    "t_struct(SettleAcct)_storage": {
+      "label": "struct SettleAcct",
+      "numberOfBytes": 256,
+      "members": [
+        {
+          "label": "realVentureBalance",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "realMoneyBalance",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "winningProposalId",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "winningPriceX112",
+          "slot": 3,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "lpTokenId",
+          "slot": 4,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "ventureRemoved",
+          "slot": 5,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "moneyRemoved",
+          "slot": 6,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "liquidityRemoved",
+          "slot": 7,
+          "offset": 0,
+          "type": "t_uint128"
+        },
+        {
+          "label": "settledAt",
+          "slot": 7,
+          "offset": 16,
+          "type": "t_uint64"
+        }
+      ]
+    },
+    "t_struct(State)_storage": {
+      "label": "struct CPMM.State",
+      "numberOfBytes": 64,
+      "members": [
+        {
+          "label": "reserve0",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "reserve1",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_uint128": {
+      "label": "uint128",
+      "numberOfBytes": 16
+    },
+    "t_uint16": {
+      "label": "uint16",
+      "numberOfBytes": 2
+    },
+    "t_uint256": {
+      "label": "uint256",
+      "numberOfBytes": 32
+    },
+    "t_uint32": {
+      "label": "uint32",
+      "numberOfBytes": 4
+    },
+    "t_uint64": {
+      "label": "uint64",
+      "numberOfBytes": 8
+    }
+  }
+}

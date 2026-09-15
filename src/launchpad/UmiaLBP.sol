@@ -31,7 +31,7 @@ import {ISpotLiquidityVault} from "../interfaces/ISpotLiquidityVault.sol";
 /// @title UmiaLBP
 /// @notice Custom LBP strategy with venture treasury integration
 /// @dev Does NOT extend LBPStrategyBase - custom implementation for flexibility.
-///      Inherits BlockNumberish so every block read shares the CCA's domain: on Arbitrum One the
+///      Inherits BlockNumberish so every block read shares the CCA's domain: on Nitro/Orbit the
 ///      auction's endBlock is an ArbSys L2 block number that raw block.number never reaches.
 contract UmiaLBP is IDistributor, ReentrancyGuard, IUmiaLBP, BlockNumberish {
     using TokenPricing for *;

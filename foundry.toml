@@ -5,8 +5,12 @@ libs = ["lib"]
 via-ir = true
 optimizer = true
 optimizer_runs = 200
-auto_detect_solc = true
+# Pinned: v4-core and the CCA require exactly 0.8.26, and a partial compile (forge inspect)
+# under auto-detection would pick a newer solc and produce bytecode that never matches chain.
+solc = "0.8.26"
 ignored_warnings_from = ["lib/"]
+# Upgrade scripts read build artifacts to resolve linked library addresses.
+fs_permissions = [{ access = "read", path = "./out" }, { access = "read", path = "../contracts.json" }]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
@@ -19,6 +23,7 @@ remappings = [
     '@uniswap/v4-periphery=lib/v4-periphery/',
     '@uniswap/permit2=lib/v4-periphery/lib/permit2/',
     '@blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/',
+    'blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/',
     '@metavest/=lib/metavest/src/',
     # CCA imports 'liquidity-launcher/src/...'. Without this, auto-detection resolves the
     # prefix to lib/liquidity-launcher/src/ and the paths double up. Same pinned commit as

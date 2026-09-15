@@ -6,18 +6,7 @@ import {Venture} from "../../src/core/Venture.sol";
 import {UmiaLBP} from "../../src/launchpad/UmiaLBP.sol";
 import {IUmiaLBP} from "../../src/interfaces/IUmiaLBP.sol";
 import {DecisionMarketBase} from "../markets/DecisionMarketBase.t.sol";
-
-contract MockArbSys {
-    uint256 internal _arbBlockNumber;
-
-    function setArbBlockNumber(uint256 value) external {
-        _arbBlockNumber = value;
-    }
-
-    function arbBlockNumber() external view returns (uint256) {
-        return _arbBlockNumber;
-    }
-}
+import {MockArbSys} from "../mocks/MockArbSys.sol";
 
 /// @notice Full launch -> migrate -> sweep cycle on Arbitrum One's block domain, where
 ///         BlockNumberish reads ArbSys's fast L2 counter and raw block.number (the L1-anchored
@@ -35,7 +24,7 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
         super.setUp();
 
         vm.etch(ARB_SYS, address(new MockArbSys()).code);
-        vm.chainId(42_161);
+        vm.chainId(_chainId());
         _setArbBlockNumber(ARB_BLOCK_START);
 
         lbpBlocks = LBPBlockConfig({
@@ -53,6 +42,10 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
 
     function _setArbBlockNumber(uint256 value) internal {
         MockArbSys(ARB_SYS).setArbBlockNumber(value);
+    }
+
+    function _chainId() internal pure virtual returns (uint256) {
+        return 42_161;
     }
 
     function test_migrateAndSweep_followTheAuctionBlockDomain() public {
@@ -88,5 +81,13 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
         _setArbBlockNumber(sweepWindow);
         ventureLbp.sweepToken();
         ventureLbp.sweepCurrency();
+    }
+}
+
+/// @notice The same real CCA -> LBP lifecycle must work on an Orbit chain without
+///         an explicit chain-ID branch in BlockNumberish.
+contract UmiaLBPRobinhoodDomainTest is UmiaLBPArbitrumDomainTest {
+    function _chainId() internal pure override returns (uint256) {
+        return 46_630;
     }
 }

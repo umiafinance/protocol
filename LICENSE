@@ -1,0 +1,30 @@
+Umia Protocol — licensing overview
+
+These contracts are licensed per file. The SPDX identifier on line 1 of each
+source file is the source of truth; this file is a map, not a grant. Full
+texts are in licenses/.
+
+-----------------------------------------------------------------------------
+
+    BUSL-1.1  The implemented protocol mechanism: markets, settlement,
+              governance, launchpad, hook, and vaults. Non-production use is
+              unrestricted; production use is subject to the Additional Use
+              Grant in licenses/BUSL_LICENSE. Converts to MIT on 2030-08-11.
+
+    MIT       The integration surface: src/interfaces/**, the shared type
+              libraries, and generic math. Build against Umia freely.
+
+    MIT       Vendored third-party code in src/reclaim/** (Reclaim Protocol).
+
+    MIT       abi/ — contract ABIs are free to use.
+
+-----------------------------------------------------------------------------
+
+See README.md for the full map; `bash check-licenses.sh` enforces it in CI.
+
+Third-party dependencies retain their own licenses. MetaVesT (AGPL-3.0) is used
+only by tests and deployment scripts; production contracts declare minimal local
+interfaces instead of importing it.
+
+Copyright (c) 2026 Umia S.P., a segregated portfolio of Umia Launcher S.P.C.
+Trademarks are not licensed by any of the above.

@@ -1,6 +1,6 @@
 {
   "name": "@umia/abi",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "description": "Typed ABIs and raw JSON exports for the Umia protocol smart contracts.",
   "license": "MIT",
   "type": "module",
@@ -13,10 +13,9 @@
     "access": "public"
   },
   "files": [
-    "src/contracts.ts",
-    "src/generated.ts",
-    "src/index.ts",
+    "dist",
     "json",
+    "addresses.json",
     "README.md"
   ],
   "exports": {
@@ -28,12 +27,19 @@
       "types": "./src/contracts.ts",
       "default": "./src/contracts.ts"
     },
+    "./addresses": {
+      "types": "./src/addresses.ts",
+      "default": "./src/addresses.ts"
+    },
+    "./addresses.json": "./addresses.json",
     "./json/*": "./json/*"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {
-    "codegen": "wagmi generate && bun run src/dump-json.ts",
+    "addresses": "bun run src/gen-addresses.ts",
+    "build": "tsc -p tsconfig.build.json && bun run fix-dist-extensions.ts",
+    "codegen": "wagmi generate && bun run src/dump-json.ts && bun run src/gen-addresses.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

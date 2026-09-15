@@ -1,0 +1,239 @@
+{
+  "storage": [
+    {
+      "label": "token",
+      "slot": 0,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "moneyToken",
+      "slot": 1,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "minMarketStake",
+      "slot": 2,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "HUB",
+      "slot": 3,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "lbp",
+      "slot": 4,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "monthlyAllowance",
+      "slot": 5,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_struct(AllowanceState)_storage)"
+    },
+    {
+      "label": "isTeamMember",
+      "slot": 6,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "label": "documents",
+      "slot": 7,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(Document)_storage)"
+    },
+    {
+      "label": "documentCount",
+      "slot": 8,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "tradingPauseDuration",
+      "slot": 9,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "tradingPauseDeadline",
+      "slot": 10,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "liquidationActive",
+      "slot": 11,
+      "offset": 0,
+      "type": "t_bool"
+    },
+    {
+      "label": "authorizedLiquidator",
+      "slot": 11,
+      "offset": 1,
+      "type": "t_address"
+    },
+    {
+      "label": "allowanceSources",
+      "slot": 12,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_struct(AllowanceSource)_storage)"
+    },
+    {
+      "label": "allowanceSourceCount",
+      "slot": 13,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_uint256)"
+    },
+    {
+      "label": "__gap",
+      "slot": 14,
+      "offset": 0,
+      "type": "t_array(t_uint256)48_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "label": "address",
+      "numberOfBytes": 20
+    },
+    "t_array(t_uint256)48_storage": {
+      "label": "uint256[48]",
+      "numberOfBytes": 1536,
+      "base": "t_uint256"
+    },
+    "t_bool": {
+      "label": "bool",
+      "numberOfBytes": 1
+    },
+    "t_enum(AllowanceSourceKind)": {
+      "label": "enum IVenture.AllowanceSourceKind",
+      "numberOfBytes": 1
+    },
+    "t_mapping(t_address,t_bool)": {
+      "label": "mapping(address => bool)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_bool"
+    },
+    "t_mapping(t_address,t_struct(AllowanceSource)_storage)": {
+      "label": "mapping(address => struct IVenture.AllowanceSource)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_struct(AllowanceSource)_storage"
+    },
+    "t_mapping(t_address,t_struct(AllowanceState)_storage)": {
+      "label": "mapping(address => struct IVenture.AllowanceState)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_struct(AllowanceState)_storage"
+    },
+    "t_mapping(t_address,t_uint256)": {
+      "label": "mapping(address => uint256)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_uint256"
+    },
+    "t_mapping(t_uint256,t_struct(Document)_storage)": {
+      "label": "mapping(uint256 => struct IVenture.Document)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(Document)_storage"
+    },
+    "t_string_storage": {
+      "label": "string",
+      "numberOfBytes": 32
+    },
+    "t_struct(AllowanceSource)_storage": {
+      "label": "struct IVenture.AllowanceSource",
+      "numberOfBytes": 32,
+      "members": [
+        {
+          "label": "underlying",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_address"
+        },
+        {
+          "label": "kind",
+          "slot": 0,
+          "offset": 20,
+          "type": "t_enum(AllowanceSourceKind)"
+        },
+        {
+          "label": "sourceDecimals",
+          "slot": 0,
+          "offset": 21,
+          "type": "t_uint8"
+        },
+        {
+          "label": "underlyingDecimals",
+          "slot": 0,
+          "offset": 22,
+          "type": "t_uint8"
+        }
+      ]
+    },
+    "t_struct(AllowanceState)_storage": {
+      "label": "struct IVenture.AllowanceState",
+      "numberOfBytes": 96,
+      "members": [
+        {
+          "label": "amount",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "spent",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "currentMonth",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_struct(Document)_storage": {
+      "label": "struct IVenture.Document",
+      "numberOfBytes": 96,
+      "members": [
+        {
+          "label": "name",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_string_storage"
+        },
+        {
+          "label": "uri",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_string_storage"
+        },
+        {
+          "label": "createdAt",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_uint256": {
+      "label": "uint256",
+      "numberOfBytes": 32
+    },
+    "t_uint8": {
+      "label": "uint8",
+      "numberOfBytes": 1
+    }
+  }
+}
