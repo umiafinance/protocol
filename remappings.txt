@@ -7,4 +7,5 @@
 v4-periphery/=lib/v4-periphery/
 @uniswap/permit2=lib/v4-periphery/lib/permit2/
 @blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
+blocknumberish/=lib/continuous-clearing-auction/lib/blocknumberish/
 @metavest/=lib/metavest/src/

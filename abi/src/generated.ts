@@ -6516,6 +6516,13 @@ export const ventureAbi = [
   {
     type: 'function',
     inputs: [],
+    name: 'MAX_SOURCE_DECIMALS',
+    outputs: [{ name: '', internalType: 'uint8', type: 'uint8' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
     name: 'MAX_TRADING_PAUSE_DURATION',
     outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
     stateMutability: 'view',
@@ -6525,6 +6532,36 @@ export const ventureAbi = [
     inputs: [],
     name: 'UPGRADE_INTERFACE_VERSION',
     outputs: [{ name: '', internalType: 'string', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '_underlying', internalType: 'address', type: 'address' }],
+    name: 'allowanceRemaining',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'allowanceSourceCount',
+    outputs: [{ name: '', internalType: 'uint256', type: 'uint256' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [{ name: '', internalType: 'address', type: 'address' }],
+    name: 'allowanceSources',
+    outputs: [
+      { name: 'underlying', internalType: 'address', type: 'address' },
+      {
+        name: 'kind',
+        internalType: 'enum IVenture.AllowanceSourceKind',
+        type: 'uint8',
+      },
+      { name: 'sourceDecimals', internalType: 'uint8', type: 'uint8' },
+      { name: 'underlyingDecimals', internalType: 'uint8', type: 'uint8' },
+    ],
     stateMutability: 'view',
   },
   {
@@ -6737,6 +6774,21 @@ export const ventureAbi = [
   },
   {
     type: 'function',
+    inputs: [
+      { name: '_source', internalType: 'address', type: 'address' },
+      { name: '_underlying', internalType: 'address', type: 'address' },
+      {
+        name: '_sourceKind',
+        internalType: 'enum IVenture.AllowanceSourceKind',
+        type: 'uint8',
+      },
+    ],
+    name: 'setAllowanceSource',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
     inputs: [{ name: '_liquidator', internalType: 'address', type: 'address' }],
     name: 'setLiquidator',
     outputs: [],
@@ -6871,6 +6923,17 @@ export const ventureAbi = [
     stateMutability: 'nonpayable',
   },
   {
+    type: 'function',
+    inputs: [
+      { name: '_source', internalType: 'address', type: 'address' },
+      { name: '_to', internalType: 'address', type: 'address' },
+      { name: '_assets', internalType: 'uint256', type: 'uint256' },
+    ],
+    name: 'withdrawMonthlyAllowanceFrom',
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
     type: 'event',
     anonymous: false,
     inputs: [
@@ -6894,6 +6957,26 @@ export const ventureAbi = [
       },
     ],
     name: 'AllowanceSet',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
+        name: 'underlying',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'source',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'kind', internalType: 'uint8', type: 'uint8', indexed: false },
+    ],
+    name: 'AllowanceSourceSet',
   },
   {
     type: 'event',
@@ -6993,6 +7076,38 @@ export const ventureAbi = [
     anonymous: false,
     inputs: [
       {
+        name: 'underlying',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      {
+        name: 'source',
+        internalType: 'address',
+        type: 'address',
+        indexed: true,
+      },
+      { name: 'to', internalType: 'address', type: 'address', indexed: true },
+      {
+        name: 'assets',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+      {
+        name: 'amount',
+        internalType: 'uint256',
+        type: 'uint256',
+        indexed: false,
+      },
+    ],
+    name: 'MonthlyAllowanceWithdrawnFrom',
+  },
+  {
+    type: 'event',
+    anonymous: false,
+    inputs: [
+      {
         name: 'member',
         internalType: 'address',
         type: 'address',
@@ -7045,6 +7160,7 @@ export const ventureAbi = [
   },
   { type: 'error', inputs: [], name: 'ERC1967NonPayable' },
   { type: 'error', inputs: [], name: 'FailedCall' },
+  { type: 'error', inputs: [], name: 'InvalidAllowanceSource' },
   { type: 'error', inputs: [], name: 'InvalidInitialization' },
   { type: 'error', inputs: [], name: 'InvalidParams' },
   { type: 'error', inputs: [], name: 'LiquidationActive' },
@@ -7067,6 +7183,7 @@ export const ventureAbi = [
     inputs: [{ name: 'slot', internalType: 'bytes32', type: 'bytes32' }],
     name: 'UUPSUnsupportedProxiableUUID',
   },
+  { type: 'error', inputs: [], name: 'UnknownAllowanceSource' },
 ] as const
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,109 @@
+{
+  "testnet": {
+    "base-sepolia": {
+      "chainId": 84532,
+      "startBlock": 45876851,
+      "umia": {
+        "hub": "0xC40beFd6c9Ee9B6061056AEdF7173A4B652CD7a2",
+        "hubImpl": "0xba0120a912Cde782442693349BE675C08fdec17F",
+        "ventureBeacon": "0x2be2Ac6748d2177788F98F6afcA4447f1498E7D2",
+        "ventureImpl": "0x214E16BC243103F15A37c6fFE338E64439299bc6",
+        "marketCore": "0x4d09719B66f97BE351cFf34be2477C72017cF9e0",
+        "marketCoreImpl": "0x670807321A619e0Eed69a538eAe4F3DcCb441552",
+        "settlementLib": "0xfe15727b6eCA01570eb5102652AB79DC123b105b",
+        "marketCreationLib": "0xA841B49652fFfbd6a94f6923B7ECEcf411cb24F5",
+        "conditionalMarketOracle": "0xb85040eF277F71fc42f71bbBAf421dC7FBA75421",
+        "ccaFactory": "0x00cCa200BF124dBfA848937c553864f4B4CE0632",
+        "ccaLens": "0xce4E3F395F9740FB0f8Bf46f97AE3F85CEc5C41a",
+        "ccaExitHelper": "0x5B2Df1132b761A135f62bc14Fa4bf815A147a95f",
+        "auctionStateLens": "0x2Db74cD4dC458954556c2f7fC94F4Af915AaDe2f",
+        "lbpFactory": "0x8564824d33161A87fAB6D8b893fDf6534e724e89",
+        "governanceExecutor": "0xF70B90eB1F1317dd7f8590Bd4fD69Ce4c9030CeB",
+        "marketStake": "0xbdd38fe838577Be813e2395F187EBf1d8631B2A4",
+        "reclaim": "0x4330F379fEcA99E4f3AC1f398b628834c227Ab85",
+        "hook": "0xa57E2c4693952d90d36D397bbD1f85737f987a80",
+        "metavestFactory": "0x6F527755EeB52C3af097077979FF546E913097c3",
+        "vestingAllocationFactory": "0x637EEB602eFDa6Aea9aA13592286dF63F6e913B3",
+        "tokenOptionFactory": "0x2cDFb862CAd7f9d2519B95A4E80830dAb5d8FCB9",
+        "restrictedTokenFactory": "0xA09B1997274675B299b5d2aa341C20A4EF90Db51",
+        "twapMilestoneCondition": "0xfB70862e3039D3141BbE451861cD29AdfE3f28D1"
+      },
+      "uniswap": {
+        "poolManager": "0x05E73354cFDd6745C338b50BcFDfA3Aa6fA03408",
+        "positionManager": "0x4b2c77d209d3405f41a037ec6c77f7f5b8e2ca80",
+        "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "stateView": "0x571291b572ed32ce6751a2cb2486ebee8defb9b4",
+        "universalRouter": "0x492e6456d9528771018deb9e87ef7750ef184104"
+      },
+      "usdc": "0x49b7A040aFCBFfC4cb02F857feE7b55C9C41658a"
+    },
+    "robinhood-chain-testnet": {
+      "chainId": 46630,
+      "startBlock": 118218679,
+      "umia": {
+        "hub": "0xb85040eF277F71fc42f71bbBAf421dC7FBA75421",
+        "ventureBeacon": "0x40e341c6e9409A21101eDacc168e1Ed950C6F743",
+        "ventureImpl": "0x455c4F4C90C44c9983e5F18F6b907FdA257D35Ba",
+        "marketCore": "0xA4FA21A275eE2e32f878d888Ad30290a13458786",
+        "conditionalMarketOracle": "0x670807321A619e0Eed69a538eAe4F3DcCb441552",
+        "ccaFactory": "0x000000001F26a0044BaA66024e7b6599c61963F8",
+        "auctionStateLens": "0x106748f27722e9888fd3c08f203E7aaBc90221D3",
+        "ccaLens": "0xcE57AF771ceCCB623796325041Eb6eD287d00586",
+        "ccaExitHelper": "0x45927dA85f7Cdb29c190834Cfe8dae4813211c1c",
+        "lbpFactory": "0x78c8DEb35D333f5278d1D8FBF9679E12ae7E3D24",
+        "governanceExecutor": "0xbe0c4ffE0E5cD3e710028A007769F7BFeB053A19",
+        "marketStake": "0xeF4677d39dBD628EA52569b7f0Fc95A5789B1891",
+        "reclaim": "0x42a9D10AcB13EEB8147F92D1857105e8B1E8d388",
+        "hook": "0xa57E2c4693952d90d36D397bbD1f85737f987a80",
+        "metavestFactory": "0x8EAEa725510D2dC99E030583921D67752CA2C02b",
+        "vestingAllocationFactory": "0x393Ae458375F942f750aB2FdD89390367112bBF4",
+        "tokenOptionFactory": "0xD9C54FC4cC6Ec40992ceaD58914DCF83D577dfF1",
+        "restrictedTokenFactory": "0x21FD1C86aC1b6288a35331823720709280B369A1",
+        "twapMilestoneCondition": "0x1bd4CEBC3B9B96B88E71341d34094cD4269E1aF1"
+      },
+      "uniswap": {
+        "poolManager": "0x8366a39cc670b4001a1121b8f6a443a643e40951",
+        "positionManager": "0x58daec3116aae6d93017baaea7749052e8a04fa7",
+        "permit2": "0x000000000022d473030f116ddee9f6b43ac78ba3",
+        "stateView": "0xf3334192d15450cdd385c8b70e03f9a6bd9e673b",
+        "universalRouter": "0x8876789976decbfcbbbe364623c63652db8c0904"
+      },
+      "usdc": "0x56a52A8704ef335146173Bb4C6eD7576B3580cA7"
+    }
+  },
+  "mainnet": {
+    "base": {
+      "chainId": 8453,
+      "startBlock": 50401538,
+      "umia": {
+        "hub": "0x120dbCDd58Bb787309573e29159fE6D37A1983F6",
+        "ventureBeacon": "0x61279d5548a52514528f05864A4739247dC8280a",
+        "ventureImpl": "0x3f516161D7b7beb1b20DcEF87FaEff17fECfD05a",
+        "marketCore": "0x55975E430Cc54C63dff03B1E6d27Be574Ce229F6",
+        "conditionalMarketOracle": "0x114C446Ce246b6C5c432Eb001fBeB17864Fc1d34",
+        "ccaFactory": "0x00cCa200BF124dBfA848937c553864f4B4CE0632",
+        "ccaLens": "0x828c0fb6f15b43c329820286282F1Cfc30a43b2D",
+        "ccaExitHelper": "0x357a0112f514f31C41dE39954434a5264Fd854dA",
+        "auctionStateLens": "0xBeB0945b177134e5E2Dff39b571786062e95B9e1",
+        "lbpFactory": "0x8E6A262e4FdfAC98565C08a2aE6fc6D16253Ad1b",
+        "governanceExecutor": "0x0Ba8b80Cc8B7E9804860f4D67b2E8051d1FD7E01",
+        "marketStake": "0x1819093Ec7376384A659e1c4976CDbc52F5564b9",
+        "reclaim": "0x5fB707cE85dc071d7c8B2cB31ab415962B1e1385",
+        "hook": "0x128BedebaA9304Db74726efba848A98E7fB53A80",
+        "metavestFactory": "0x2b4b2B279120eBD02af71d537d9479B2d7a12415",
+        "vestingAllocationFactory": "0xd378fbA0F53AE62B34D27f21E4496aD000Eb4D91",
+        "tokenOptionFactory": "0xb0800C442a1967462f3F5158a3e55E2b45599f38",
+        "restrictedTokenFactory": "0x5104D7820e3Cb971D1a2CBE49eF0Aa0340B1453e",
+        "twapMilestoneCondition": "0xD02b4a64ad0A6ba72aCABC4a0cB284EeFd3466Fc"
+      },
+      "uniswap": {
+        "poolManager": "0x498581fF718922c3f8e6A244956aF099B2652b2b",
+        "positionManager": "0x7C5f5A4bBd8fD63184577525326123B519429bDc",
+        "permit2": "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+        "stateView": "0xA3c0c9b65baD0b08107Aa264b0f3dB444b867A71",
+        "universalRouter": "0x6ff5693b99212da76ad316178a184ab56d299b43"
+      },
+      "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    }
+  }
+}

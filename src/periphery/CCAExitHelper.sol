@@ -15,7 +15,7 @@ import {IContinuousClearingAuction} from "@continuous-clearing-auction/interface
 ///      first. This helper reads the block number on-chain at execution time instead.
 ///
 ///      It inherits `BlockNumberish` so the value it passes matches what the auction
-///      computes in the same transaction (Arbitrum One reports the L2 block via ArbSys, not
+///      computes in the same transaction (Nitro/Orbit reports the L2 block via ArbSys, not
 ///      `block.number`). The helper holds no funds and needs no access control:
 ///      `exitPartiallyFilledBid` is permissionless and refunds the stored bid owner, never
 ///      `msg.sender`.

@@ -19,7 +19,8 @@ library GovernanceTypes {
         LIQUIDATE_TREASURY,
         CALL,
         UPGRADE_IMPLEMENTATION,
-        SET_ALLOWANCE
+        SET_ALLOWANCE,
+        SET_ALLOWANCE_SOURCE
     }
 
     /// @notice Asset classes for treasury transfers and liquidation snapshots.
@@ -115,5 +116,13 @@ library GovernanceTypes {
         address token;
         address spender;
         uint256 amount;
+    }
+
+    /// @notice Parameters for registering, updating or removing a monthly-allowance budget source.
+    /// @dev `sourceKind` mirrors `IVenture.AllowanceSourceKind`; 0 removes the source.
+    struct SetAllowanceSource {
+        address source;
+        address underlying;
+        uint8 sourceKind;
     }
 }

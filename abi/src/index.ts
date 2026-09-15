@@ -1,6 +1,16 @@
 import * as generated from "./generated";
 
 export {
+  addresses,
+  type ChainAddresses,
+  type ChainName,
+  type Environment,
+  getChainAddresses,
+  getChainAddressesById,
+  getChains,
+  getContractAddress,
+} from "./addresses";
+export {
   ALL_ARTIFACTS,
   CONTRACTS,
   type ContractName,

@@ -1,0 +1,265 @@
+{
+  "storage": [
+    {
+      "label": "_owner",
+      "slot": 0,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "ventureCount",
+      "slot": 1,
+      "offset": 0,
+      "type": "t_uint256"
+    },
+    {
+      "label": "_ventureById",
+      "slot": 2,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_struct(VentureInfo)_storage)"
+    },
+    {
+      "label": "approvedMoneyTokens",
+      "slot": 3,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_bool)"
+    },
+    {
+      "label": "umiaMarketCore",
+      "slot": 4,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "defaultGovernanceExecutor",
+      "slot": 5,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "governanceExecutorByVenture",
+      "slot": 6,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "label": "conditionalMarketOracle",
+      "slot": 7,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "winningMarketThresholdBps",
+      "slot": 7,
+      "offset": 20,
+      "type": "t_uint16"
+    },
+    {
+      "label": "marketCreationSigner",
+      "slot": 8,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "lbpStrategyFactory",
+      "slot": 9,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "ccaFactory",
+      "slot": 10,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "decisionMarketCircuitBreakerActive",
+      "slot": 11,
+      "offset": 0,
+      "type": "t_mapping(t_uint256,t_bool)"
+    },
+    {
+      "label": "ventureBeacon",
+      "slot": 12,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "umiaMarketStake",
+      "slot": 13,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "decisionMarketExecutionDelay",
+      "slot": 13,
+      "offset": 20,
+      "type": "t_uint32"
+    },
+    {
+      "label": "protocolFeeRecipient",
+      "slot": 14,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "spotSwapFeeBps",
+      "slot": 14,
+      "offset": 20,
+      "type": "t_uint16"
+    },
+    {
+      "label": "spotProtocolFeeCutBps",
+      "slot": 14,
+      "offset": 22,
+      "type": "t_uint16"
+    },
+    {
+      "label": "decisionSwapFeeBps",
+      "slot": 14,
+      "offset": 24,
+      "type": "t_uint16"
+    },
+    {
+      "label": "decisionProtocolFeeCutBps",
+      "slot": 14,
+      "offset": 26,
+      "type": "t_uint16"
+    },
+    {
+      "label": "_ventureLiquidityVault",
+      "slot": 15,
+      "offset": 0,
+      "type": "t_mapping(t_address,t_address)"
+    },
+    {
+      "label": "defaultPoolTickSpacing",
+      "slot": 16,
+      "offset": 0,
+      "type": "t_int24"
+    },
+    {
+      "label": "migrationDelayBlocks",
+      "slot": 16,
+      "offset": 3,
+      "type": "t_uint64"
+    },
+    {
+      "label": "sweepDelayBlocks",
+      "slot": 16,
+      "offset": 11,
+      "type": "t_uint64"
+    },
+    {
+      "label": "vetoGuardian",
+      "slot": 17,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "vestingAdmin",
+      "slot": 18,
+      "offset": 0,
+      "type": "t_address"
+    },
+    {
+      "label": "__gap",
+      "slot": 19,
+      "offset": 0,
+      "type": "t_array(t_uint256)50_storage"
+    }
+  ],
+  "types": {
+    "t_address": {
+      "label": "address",
+      "numberOfBytes": 20
+    },
+    "t_array(t_uint256)50_storage": {
+      "label": "uint256[50]",
+      "numberOfBytes": 1600,
+      "base": "t_uint256"
+    },
+    "t_bool": {
+      "label": "bool",
+      "numberOfBytes": 1
+    },
+    "t_int24": {
+      "label": "int24",
+      "numberOfBytes": 3
+    },
+    "t_mapping(t_address,t_address)": {
+      "label": "mapping(address => address)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_address"
+    },
+    "t_mapping(t_address,t_bool)": {
+      "label": "mapping(address => bool)",
+      "numberOfBytes": 32,
+      "key": "t_address",
+      "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_bool)": {
+      "label": "mapping(uint256 => bool)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_bool"
+    },
+    "t_mapping(t_uint256,t_struct(VentureInfo)_storage)": {
+      "label": "mapping(uint256 => struct IUmiaHub.VentureInfo)",
+      "numberOfBytes": 32,
+      "key": "t_uint256",
+      "value": "t_struct(VentureInfo)_storage"
+    },
+    "t_string_storage": {
+      "label": "string",
+      "numberOfBytes": 32
+    },
+    "t_struct(VentureInfo)_storage": {
+      "label": "struct IUmiaHub.VentureInfo",
+      "numberOfBytes": 128,
+      "members": [
+        {
+          "label": "id",
+          "slot": 0,
+          "offset": 0,
+          "type": "t_uint256"
+        },
+        {
+          "label": "venture",
+          "slot": 1,
+          "offset": 0,
+          "type": "t_address"
+        },
+        {
+          "label": "name",
+          "slot": 2,
+          "offset": 0,
+          "type": "t_string_storage"
+        },
+        {
+          "label": "createdAt",
+          "slot": 3,
+          "offset": 0,
+          "type": "t_uint256"
+        }
+      ]
+    },
+    "t_uint16": {
+      "label": "uint16",
+      "numberOfBytes": 2
+    },
+    "t_uint256": {
+      "label": "uint256",
+      "numberOfBytes": 32
+    },
+    "t_uint32": {
+      "label": "uint32",
+      "numberOfBytes": 4
+    },
+    "t_uint64": {
+      "label": "uint64",
+      "numberOfBytes": 8
+    }
+  }
+}

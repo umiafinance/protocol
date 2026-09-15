@@ -49,6 +49,19 @@
   },
   {
     "type": "function",
+    "name": "MAX_SOURCE_DECIMALS",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "MAX_TRADING_PAUSE_DURATION",
     "inputs": [],
     "outputs": [
@@ -69,6 +82,78 @@
         "name": "",
         "type": "string",
         "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "allowanceRemaining",
+    "inputs": [
+      {
+        "name": "_underlying",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "allowanceSourceCount",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "allowanceSources",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "underlying",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "kind",
+        "type": "uint8",
+        "internalType": "enum IVenture.AllowanceSourceKind"
+      },
+      {
+        "name": "sourceDecimals",
+        "type": "uint8",
+        "internalType": "uint8"
+      },
+      {
+        "name": "underlyingDecimals",
+        "type": "uint8",
+        "internalType": "uint8"
       }
     ],
     "stateMutability": "view"
@@ -521,6 +606,29 @@
   },
   {
     "type": "function",
+    "name": "setAllowanceSource",
+    "inputs": [
+      {
+        "name": "_source",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_underlying",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_sourceKind",
+        "type": "uint8",
+        "internalType": "enum IVenture.AllowanceSourceKind"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "setLiquidator",
     "inputs": [
       {
@@ -785,6 +893,29 @@
     "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "withdrawMonthlyAllowanceFrom",
+    "inputs": [
+      {
+        "name": "_source",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_to",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_assets",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
     "type": "event",
     "name": "AllowanceSet",
     "inputs": [
@@ -805,6 +936,31 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AllowanceSourceSet",
+    "inputs": [
+      {
+        "name": "underlying",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "source",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "kind",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
       }
     ],
     "anonymous": false
@@ -919,6 +1075,43 @@
   },
   {
     "type": "event",
+    "name": "MonthlyAllowanceWithdrawnFrom",
+    "inputs": [
+      {
+        "name": "underlying",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "source",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "to",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "assets",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TeamMemberUpdated",
     "inputs": [
       {
@@ -1011,6 +1204,11 @@
   },
   {
     "type": "error",
+    "name": "InvalidAllowanceSource",
+    "inputs": []
+  },
+  {
+    "type": "error",
     "name": "InvalidInitialization",
     "inputs": []
   },
@@ -1090,5 +1288,10 @@
         "internalType": "bytes32"
       }
     ]
+  },
+  {
+    "type": "error",
+    "name": "UnknownAllowanceSource",
+    "inputs": []
   }
 ]

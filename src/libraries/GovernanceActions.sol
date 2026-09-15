@@ -35,6 +35,9 @@ library GovernanceActions {
         if (actionType == GovernanceTypes.ActionType.CALL) return _validateCall(action.data);
         if (actionType == GovernanceTypes.ActionType.UPGRADE_IMPLEMENTATION) return _validateUpgrade(action.data);
         if (actionType == GovernanceTypes.ActionType.SET_ALLOWANCE) return _validateSetAllowance(action.data);
+        if (actionType == GovernanceTypes.ActionType.SET_ALLOWANCE_SOURCE) {
+            return _validateSetAllowanceSource(action.data);
+        }
 
         revert InvalidAction();
     }
@@ -65,6 +68,9 @@ library GovernanceActions {
         }
         if (actionType == GovernanceTypes.ActionType.SET_ALLOWANCE) {
             return _executeSetAllowance(venture, action.data);
+        }
+        if (actionType == GovernanceTypes.ActionType.SET_ALLOWANCE_SOURCE) {
+            return _executeSetAllowanceSource(venture, action.data);
         }
 
         revert InvalidAction();
@@ -176,6 +182,14 @@ library GovernanceActions {
         if (params.token == address(0) || params.spender == address(0)) revert InvalidParams();
     }
 
+    function _validateSetAllowanceSource(bytes memory data) private pure {
+        GovernanceTypes.SetAllowanceSource memory params = abi.decode(data, (GovernanceTypes.SetAllowanceSource));
+        if (params.source == address(0)) revert InvalidParams();
+        if (params.sourceKind > uint8(IVenture.AllowanceSourceKind.ERC4626)) revert InvalidParams();
+        if (params.sourceKind == 0) return;
+        if (params.underlying == address(0) || params.source == params.underlying) revert InvalidParams();
+    }
+
     function _executeMint(IVenture venture, bytes memory data) private {
         GovernanceTypes.MintTokens memory params = abi.decode(data, (GovernanceTypes.MintTokens));
         venture.mint(params.to, params.amount);
@@ -278,5 +292,10 @@ library GovernanceActions {
     function _executeSetAllowance(IVenture venture, bytes memory data) private {
         GovernanceTypes.SetAllowance memory params = abi.decode(data, (GovernanceTypes.SetAllowance));
         venture.setAllowance(params.token, params.spender, params.amount);
+    }
+
+    function _executeSetAllowanceSource(IVenture venture, bytes memory data) private {
+        GovernanceTypes.SetAllowanceSource memory params = abi.decode(data, (GovernanceTypes.SetAllowanceSource));
+        venture.setAllowanceSource(params.source, params.underlying, IVenture.AllowanceSourceKind(params.sourceKind));
     }
 }

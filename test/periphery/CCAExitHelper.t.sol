@@ -12,6 +12,7 @@ import {FixedPoint96} from "@continuous-clearing-auction/libraries/FixedPoint96.
 import {FixedPointMathLib} from "@solady/utils/FixedPointMathLib.sol";
 import {CCAExitHelper} from "../../src/periphery/CCAExitHelper.sol";
 import {MockERC20} from "../mocks/MockERC20.sol";
+import {MockArbSys} from "../mocks/MockArbSys.sol";
 
 /// Exercises CCAExitHelper against a real CCA auction driven to a live "out-bid" state.
 /// requiredCurrencyRaised == 0 keeps the auction graduated from the first block, so an
@@ -126,6 +127,30 @@ contract CCAExitHelperTest is Test {
         assertGt(owner.balance, ownerBalanceBefore, "owner received a refund");
         assertLe(owner.balance - ownerBalanceBefore, bidAmount, "refund cannot exceed the bid amount");
         assertEq(address(helper).balance, 0, "helper never custodies funds");
+    }
+
+    function test_exitOutbidBid_robinhoodUsesL2Block() public {
+        address arbSys = address(100);
+        vm.chainId(46_630);
+        vm.etch(arbSys, address(new MockArbSys()).code);
+        vm.roll(335_000_000);
+        MockArbSys(arbSys).setArbBlockNumber(block.number);
+        // Nitro detection is immutable: ArbSys must exist before construction.
+        helper = new CCAExitHelper();
+        (ContinuousClearingAuction auction, uint64 startBlock_) = _deployAuction(0);
+        vm.roll(100); // Keep Solidity's ancestor-chain height outside the auction.
+
+        address owner = makeAddr("owner");
+        uint256 bidId = _bid(auction, owner, _tickPrice(2), _inputForTokens(1e18, _tickPrice(2)));
+        MockArbSys(arbSys).setArbBlockNumber(startBlock_ + 1);
+        _bid(auction, makeAddr("outbidder"), _tickPrice(3), _inputForTokens(TOTAL_SUPPLY, _tickPrice(3)));
+        MockArbSys(arbSys).setArbBlockNumber(startBlock_ + 2);
+
+        uint256 balanceBefore = owner.balance;
+        helper.exitOutbidBid(IContinuousClearingAuction(address(auction)), bidId, startBlock_ + 1);
+        assertEq(auction.bids(bidId).exitedBlock, startBlock_ + 2, "exit uses L2 height");
+        assertGt(owner.balance, balanceBefore, "owner received refund");
+        assertEq(address(helper).balance, 0);
     }
 
     /// The one-tx wrapper must be byte-for-byte equivalent to the two-tx flow it replaces

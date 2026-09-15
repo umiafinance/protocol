@@ -33,6 +33,8 @@ CALL → VentureVestingAuthority.terminateGrant(allocation_i)   // one per grant
 ...
 SET_ALLOWANCE(moneyToken, spender_j, 0)                       // one per live allowance, see §2
 ...
+CALL → vault.redeem(shares, venture, venture) / Pool.withdraw  // one per budget source, see §3
+...
 LIQUIDATE_TREASURY(liquidator, assets)                        // always last
 ```
 
@@ -107,6 +109,30 @@ treasury asset), ordered before `LIQUIDATE_TREASURY`.
   token; the liquidator skips it (paying it out pro-rata would let a claimant forward
   the payout and claim again).
 
+## §3 — Unwind budget sources first
+
+`SET_ALLOWANCE_SOURCE` lets the treasury hold its cash as Aave aTokens, other stablecoins or
+ERC-4626 vault shares. The liquidator snapshots `balanceOf` once at `initialize` and pays fixed
+pro-rata amounts, so those holdings must be listed as liquidation assets to be distributed at all,
+and two of them distribute badly:
+
+- A rebasing token (aUSDC) keeps growing after the snapshot; the growth is stranded forever, and
+  an exact-amount transfer that lands a wei short can revert the last claimant.
+- ERC-4626 shares distribute correctly as shares, but claimants receive shares they must redeem
+  themselves, paying any vault exit cost or illiquidity.
+
+`create-liquidation-dm.ts` now does this automatically: it folds the venture's
+`AllowanceSourceSet` log into the live set, derives an Aave withdrawal from the aToken's own
+`POOL()`, redeems an ERC-4626 vault's full share balance, and lists a plain pegged stablecoin as a
+liquidation asset instead of unwinding it. Review its printed plan before proposing; the manual
+shape is below.
+
+Unwind every source back to the underlying before the snapshot, in the same plan:
+`CALL(Pool, 0, withdraw(USDC, type(uint256).max, venture))` for Aave,
+`CALL(vault, 0, redeem(vault.balanceOf(venture), venture, venture))` for a vault, then list the
+underlying in `assets`. Other pegged stablecoins can simply be listed as their own asset.
+Enumerate active sources from the indexed `AllowanceSourceSet` events.
+
 ## Tooling
 
 `services/internal-cli/scripts/create-liquidation-dm.ts` builds the plan and already
@@ -118,5 +144,5 @@ misses). Extending it to auto-discover grants and prepend the §1 `terminateGran
 
 > Everything that must be true at the snapshot has to happen **before**
 > `LIQUIDATE_TREASURY`, in the same atomic plan. After it, the venture is frozen.
-> Terminate grants, then zero allowances, then liquidate — always in that order,
-> liquidate last.
+> Terminate grants, zero allowances, unwind budget sources, then liquidate — always in
+> that order, liquidate last.

@@ -11,6 +11,8 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {IUmiaHub} from "../interfaces/IUmiaHub.sol";
 import {IVenture} from "../interfaces/IVenture.sol";
@@ -84,6 +86,9 @@ contract Venture is
     /// @notice Maximum allowed document URI length.
     uint256 public constant MAX_DOCUMENT_URI_LENGTH = 2048;
 
+    /// @notice Maximum decimals accepted for a budget source or its underlying.
+    uint8 public constant MAX_SOURCE_DECIMALS = 36;
+
     /// @notice Liquidation state (terminal).
     /// @dev Once true, no further treasury operations except claims are allowed.
     bool public liquidationActive;
@@ -92,8 +97,14 @@ contract Venture is
     /// @dev During liquidation, only this address can call withdraw functions.
     address public authorizedLiquidator;
 
+    /// @notice Registered budget sources: tokens the operating budget of an underlying can be spent from.
+    mapping(address => AllowanceSource) public allowanceSources;
+
+    /// @notice Number of registered sources per underlying; non-zero means the token is a budget unit.
+    mapping(address => uint256) public allowanceSourceCount;
+
     /// @notice Gap for future upgrades.
-    uint256[50] private __gap;
+    uint256[48] private __gap;
 
     // ─────────────────────────────────────────────────────────
     // Upgrade
@@ -310,6 +321,7 @@ contract Venture is
     /// @param _token The token address for the allowance.
     /// @param _amount The new allowance amount.
     function updateMonthlyAllowance(address _token, uint256 _amount) external onlyExecutor whenNotLiquidating {
+        if (allowanceSources[_token].kind != AllowanceSourceKind.NONE) revert InvalidAllowanceSource();
         AllowanceState storage allowance = monthlyAllowance[_token];
         _syncAllowance(allowance);
         allowance.amount = _amount;
@@ -347,6 +359,7 @@ contract Venture is
     {
         if (!isTeamMember[msg.sender]) revert NotTeamMember();
         if (_to == address(0) || _amount == 0) revert InvalidParams();
+        if (allowanceSources[_token].kind != AllowanceSourceKind.NONE) revert InvalidAllowanceSource();
 
         AllowanceState storage allowance = monthlyAllowance[_token];
         _syncAllowance(allowance);
@@ -358,6 +371,110 @@ contract Venture is
         allowance.spent += _amount;
         _transferToken(_token, _to, _amount);
         emit MonthlyAllowanceWithdrawn(_token, _to, _amount);
+    }
+
+    /// @notice Registers, updates or removes a budget source for an underlying's monthly allowance.
+    /// @dev Only callable by the governance executor when not in liquidation. A PEGGED source is a
+    ///      governance attestation that one whole unit of `_source` is worth one whole unit of
+    ///      `_underlying`; an ERC4626 source must report `_underlying` as its asset. Kind NONE removes.
+    /// @param _source The token the budget can be spent from.
+    /// @param _underlying The underlying whose monthly allowance the source draws down.
+    /// @param _sourceKind PEGGED, ERC4626, or NONE to remove.
+    function setAllowanceSource(address _source, address _underlying, AllowanceSourceKind _sourceKind)
+        external
+        onlyExecutor
+        whenNotLiquidating
+        nonReentrant
+    {
+        if (_source == address(0)) revert InvalidParams();
+
+        AllowanceSource memory existing = allowanceSources[_source];
+
+        if (_sourceKind == AllowanceSourceKind.NONE) {
+            if (existing.kind == AllowanceSourceKind.NONE) return;
+            allowanceSourceCount[existing.underlying] -= 1;
+            delete allowanceSources[_source];
+            emit AllowanceSourceSet(existing.underlying, _source, uint8(_sourceKind));
+            return;
+        }
+
+        if (_underlying == address(0) || _source == _underlying) revert InvalidAllowanceSource();
+        // The project token backs claims and the money token is the budget unit the hub spends from;
+        // neither may become a source without bricking those paths.
+        if (_source == token || _source == moneyToken) revert InvalidAllowanceSource();
+        if (_source.code.length == 0) revert InvalidAllowanceSource();
+        // Groups never nest, in either direction.
+        if (allowanceSources[_underlying].kind != AllowanceSourceKind.NONE) revert InvalidAllowanceSource();
+        if (allowanceSourceCount[_source] != 0) revert InvalidAllowanceSource();
+        if (monthlyAllowance[_source].amount != 0) revert InvalidAllowanceSource();
+
+        uint8 sourceDecimals = IERC20Metadata(_source).decimals();
+        uint8 underlyingDecimals = IERC20Metadata(_underlying).decimals();
+        if (sourceDecimals > MAX_SOURCE_DECIMALS || underlyingDecimals > MAX_SOURCE_DECIMALS) {
+            revert InvalidAllowanceSource();
+        }
+
+        if (_sourceKind == AllowanceSourceKind.ERC4626) {
+            if (IERC4626(_source).asset() != _underlying) revert InvalidAllowanceSource();
+        }
+
+        if (existing.kind != AllowanceSourceKind.NONE) allowanceSourceCount[existing.underlying] -= 1;
+        allowanceSourceCount[_underlying] += 1;
+
+        allowanceSources[_source] = AllowanceSource({
+            underlying: _underlying,
+            kind: _sourceKind,
+            sourceDecimals: sourceDecimals,
+            underlyingDecimals: underlyingDecimals
+        });
+        emit AllowanceSourceSet(_underlying, _source, uint8(_sourceKind));
+    }
+
+    /// @notice Spends the underlying's monthly allowance out of a registered source.
+    /// @dev Only team members can call this when not in liquidation. `_assets` is denominated in the
+    ///      underlying; the budget is debited in underlying units regardless of which token moves.
+    /// @param _source A registered budget source.
+    /// @param _to The recipient address.
+    /// @param _assets The amount to spend, in underlying units.
+    function withdrawMonthlyAllowanceFrom(address _source, address _to, uint256 _assets)
+        external
+        whenNotLiquidating
+        nonReentrant
+    {
+        if (!isTeamMember[msg.sender]) revert NotTeamMember();
+        if (_to == address(0) || _assets == 0) revert InvalidParams();
+
+        AllowanceSource memory src = allowanceSources[_source];
+        if (src.kind == AllowanceSourceKind.NONE) revert UnknownAllowanceSource();
+
+        uint256 debit = _assets;
+        uint256 amount = _assets;
+        if (src.kind == AllowanceSourceKind.PEGGED) {
+            (amount, debit) = _scalePegged(_assets, src.sourceDecimals, src.underlyingDecimals);
+            if (amount == 0) revert InvalidParams();
+        }
+
+        AllowanceState storage allowance = monthlyAllowance[src.underlying];
+        _syncAllowance(allowance);
+        if (allowance.spent >= allowance.amount) revert AllowanceExceeded();
+        if (debit > allowance.amount - allowance.spent) revert AllowanceExceeded();
+        allowance.spent += debit;
+
+        if (src.kind == AllowanceSourceKind.PEGGED) {
+            IERC20(_source).safeTransfer(_to, amount);
+        } else {
+            IERC4626(_source).withdraw(_assets, _to, address(this));
+        }
+
+        emit MonthlyAllowanceWithdrawnFrom(src.underlying, _source, _to, debit, amount);
+    }
+
+    /// @notice Remaining monthly allowance for an underlying, treating a stale month as unspent.
+    /// @param _underlying The underlying token.
+    function allowanceRemaining(address _underlying) external view returns (uint256) {
+        AllowanceState storage allowance = monthlyAllowance[_underlying];
+        uint256 spent = allowance.currentMonth == CalendarLib.timestampToMonth(block.timestamp) ? allowance.spent : 0;
+        return allowance.amount > spent ? allowance.amount - spent : 0;
     }
 
     /// @notice Uploads a governance document reference.
@@ -493,6 +610,22 @@ contract Venture is
         if (allowance.currentMonth == month) return;
         allowance.currentMonth = month;
         allowance.spent = 0;
+    }
+
+    /// @dev Scales an underlying-denominated request to source units. When the source has fewer
+    ///      decimals the amount floors and the debit is the floored amount scaled back up.
+    function _scalePegged(uint256 assets, uint8 sourceDecimals, uint8 underlyingDecimals)
+        internal
+        pure
+        returns (uint256 amount, uint256 debit)
+    {
+        if (sourceDecimals == underlyingDecimals) return (assets, assets);
+        if (sourceDecimals > underlyingDecimals) {
+            return (assets * 10 ** (sourceDecimals - underlyingDecimals), assets);
+        }
+        uint256 factor = 10 ** (underlyingDecimals - sourceDecimals);
+        amount = assets / factor;
+        debit = amount * factor;
     }
 
     /// @notice Internal function to update team member status.

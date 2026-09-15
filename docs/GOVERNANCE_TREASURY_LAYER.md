@@ -128,7 +128,8 @@ enum ActionType {
     LIQUIDATE_TREASURY,
     CALL,
     UPGRADE_IMPLEMENTATION,
-    SET_ALLOWANCE
+    SET_ALLOWANCE,
+    SET_ALLOWANCE_SOURCE
 }
 ```
 
@@ -230,6 +231,36 @@ Rules:
 - Uses `forceApprove` internally for broad ERC20 compatibility.
 - Distinct from `UPDATE_MONTHLY_ALLOWANCE` (the latter is calendar-month team pull allowances with spend tracking).
 - **Standing allowances persist into liquidation and are not auto-revoked.** Before liquidating, a `LIQUIDATE_TREASURY` plan MUST first zero every live allowance with `SET_ALLOWANCE(token, spender, 0)` actions — see [LIQUIDATE_TREASURY](#liquidate_treasury). Enumerate live allowances from the indexed `AllowanceSet(token, spender, amount)` events.
+
+#### SET_ALLOWANCE_SOURCE
+
+Registers, updates or removes a budget source: a token the treasury holds that the monthly
+allowance of an underlying can be spent from. See [Monthly Allowance](#monthly-allowance) for
+the budget-group model this enables.
+
+```solidity
+struct SetAllowanceSource {
+    address source;      // the token the budget can be spent from
+    address underlying;  // whose monthly allowance it draws down; ignored when sourceKind == 0
+    uint8 sourceKind;    // 0 NONE (remove), 1 PEGGED, 2 ERC4626
+}
+```
+
+Rules (payload validator, pure):
+
+- `source != address(0)`, `sourceKind <= 2`, and `underlying != address(0)` unless removing.
+
+Rules (Venture, at execution):
+
+- `source` has code, `source != underlying`, and `source` is neither `token()` (backs claims) nor `moneyToken()` (the budget unit the hub spends from).
+- Groups never nest in either direction: `underlying` is not itself a registered source, and `source` is not already some other group's underlying (`allowanceSourceCount(source) == 0`).
+- `source != underlying` and the kind bound are the only two rules a pure validator can check, so they are enforced at market creation; the rest surface as an execution-time revert. Rehearse a registration plan on a fork before proposing it.
+- `monthlyAllowance[source].amount == 0`: a token with its own cap cannot join a group until governance zeros that cap.
+- `PEGGED`: both tokens expose `decimals()` (at most 36); one whole unit of `source` is attested to equal one whole unit of `underlying`. This is a governance attestation, not a verified peg.
+- `ERC4626`: `IERC4626(source).asset() == underlying`.
+- Re-registering overwrites; `sourceKind == 0` deletes and emits the previously stored underlying.
+
+Emits `AllowanceSourceSet(underlying, source, kind)`.
 
 #### UPDATE_TEAM_MEMBER
 
@@ -423,6 +454,40 @@ Rules:
 - When the computed month changes, `monthlyAllowance[token].spent` resets to `0`.
 - Any team member can withdraw up to `monthlyAllowance[token].amount - monthlyAllowance[token].spent`.
 - Withdrawal uses `TRANSFER_TREASURY_ASSETS` internally or a dedicated function.
+
+### Budget groups
+
+The cap on an underlying is the whole month's budget for that underlying, whichever token it
+leaves the treasury as. A group is the underlying plus every source registered for it with
+`SET_ALLOWANCE_SOURCE`; every spend from any member debits the same `spent` counter.
+
+- `withdrawMonthlyAllowance(underlying, to, amount)` spends the liquid underlying, as before.
+- `withdrawMonthlyAllowanceFrom(source, to, assets)` spends `assets` (underlying units) from a
+  registered source. `PEGGED` transfers `assets` scaled to the source's decimals (floored when the
+  source has fewer decimals; the budget is debited by the floored value scaled back). `ERC4626`
+  calls `withdraw(assets, to, venture)` so the recipient receives the underlying and the venture's
+  shares are burned. Emits `MonthlyAllowanceWithdrawnFrom(underlying, source, to, assets, amount)`,
+  with `to` indexed, `assets` the budget debit in underlying units and `amount` the transferred
+  source units for `PEGGED` or the withdrawn underlying units for `ERC4626`.
+- `allowanceRemaining(underlying)` returns the remaining budget, treating a stale month as unspent.
+- A registered source cannot carry its own cap: `updateMonthlyAllowance(source, ..)` and
+  `withdrawMonthlyAllowance(source, ..)` revert `InvalidAllowanceSource` while it is registered.
+- Nothing in the spend path approves a source: `withdrawMonthlyAllowanceFrom` transfers or redeems from the venture's own balance. A misconfigured source can only revert or burn budget.
+- Governance itself is **not** contained by the group. `SET_ALLOWANCE(source, spender, n)` and a raw `CALL(source, approve(...))` both still grant a spender direct access to a parked position with no debit to the budget, exactly as they do for any other treasury token. The budget bounds what the *team* can spend, not what a passed proposal can do.
+
+Parking 1M USDC in Aave v3 on Base while keeping the budget intact, one plan in this order:
+
+```
+SET_ALLOWANCE(USDC, AavePool, 1_000_000e6)
+CALL(AavePool, 0, supply(USDC, 1_000_000e6, venture, 0))
+SET_ALLOWANCE(USDC, AavePool, 0)
+SET_ALLOWANCE_SOURCE(aBasUSDC, USDC, PEGGED)
+```
+
+For an ERC-4626 vault such as a Morpho vault, replace the middle with `SET_ALLOWANCE(USDC, vault, amt)`,
+`CALL(vault, 0, deposit(amt, venture))`, `SET_ALLOWANCE(USDC, vault, 0)` and register with `ERC4626`.
+Other stablecoins join the same group as `PEGGED` sources; a depeg leaks at most the depeg
+fraction of that month's cap until the source is removed.
 
 ## Document Registry
 

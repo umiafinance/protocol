@@ -19,6 +19,7 @@ import {IUmiaValidationHook} from "../../src/interfaces/IUmiaValidationHook.sol"
 import {UmiaValidationHook} from "../../src/periphery/UmiaValidationHook.sol";
 import {Reclaim} from "../../src/reclaim/Reclaim.sol";
 import {Claims} from "../../src/reclaim/Claims.sol";
+import {MockArbSys} from "../mocks/MockArbSys.sol";
 
 contract MockCCA {
     address private _pointer;
@@ -383,6 +384,27 @@ contract UmiaValidationHookTest is Test {
     }
 
     // ============ Pre-verification Flow ============
+
+    function test_validate_robinhoodGateUsesL2Block() public {
+        vm.chainId(46_630);
+        address arbSys = address(100);
+        vm.etch(arbSys, address(new MockArbSys()).code);
+        MockArbSys(arbSys).setArbBlockNumber(step0Start);
+        vm.roll(1); // Ancestor height is before the auction, but L2 is in its gated step.
+        UmiaValidationHook nitroHook = new UmiaValidationHook(admin, address(reclaim), address(0));
+        vm.startPrank(admin);
+        nitroHook.setCCA(address(mockCCA));
+        nitroHook.enableStep(0, _singleHash(PROVIDER_HASH_1), _singleId("test-provider"));
+        vm.stopPrank();
+
+        vm.prank(address(mockCCA));
+        vm.expectRevert(abi.encodeWithSelector(UmiaValidationHook.ProofRequired.selector, uint256(0)));
+        nitroHook.validate(0, 1, user, user, bytes(""));
+
+        MockArbSys(arbSys).setArbBlockNumber(step0End);
+        vm.prank(address(mockCCA));
+        nitroHook.validate(0, 1, user, user, bytes(""));
+    }
 
     function test_submitProof_succeeds() public {
         bytes memory proofData = _createProofForUser(user);
@@ -3747,5 +3769,209 @@ contract UmiaValidationHookTest is Test {
 
         assertEq(hook.zkBidTotal(user, 0), 0, "attacker must not inflate the victim's total");
         assertEq(hook.zkGlobalBidTotal(), 0, "attacker must not inflate the global total");
+    }
+
+    // ─────────────────────────────────────────────────────────
+    // Cap Retune — lowering the per-wallet cap while raising the global cap
+    // ─────────────────────────────────────────────────────────
+
+    /// Operator retune: a wallet already past the NEW per-wallet cap is frozen at that step.
+    /// The step total is never rebased on a cap change, so `used > cap` blocks even a 1-unit
+    /// bid — raising the global cap does not unblock it.
+    function test_capRetune_walletOverNewStepCap_isFrozenDespiteGlobalHeadroom() public {
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP); // 1,000
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP); // 2,000
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, ""); // spends the full 1,000
+        assertEq(hook.zkBidTotal(user, 0), ZK_CAP, "wallet should sit at the old cap");
+
+        // Retune: halve the per-wallet cap, double the global cap.
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP / 2); // 500 — below what the wallet already spent
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2); // 4,000 — plenty of room
+        vm.stopPrank();
+
+        assertEq(hook.zkBidTotal(user, 0), ZK_CAP, "retune must not rebase the accrued total");
+
+        vm.prank(hook.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(UmiaValidationHook.ZkBidExceedsStepCap.selector, user, 0, ZK_CAP + 1, ZK_CAP / 2)
+        );
+        hook.validate(0, 1, user, user, "");
+        assertEq(hook.zkGlobalBidTotal(), ZK_CAP, "the rejected bid must not accrue globally");
+    }
+
+    /// The same retune leaves a fresh wallet fully able to bid up to the new, lower cap —
+    /// the freeze is per-wallet, not a step-wide halt.
+    function test_capRetune_freshWalletGetsNewLowerCap() public {
+        address user2 = makeAddr("user2");
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+        hook.submitProof(user2, 0, _createProofForUser(user2));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, "");
+
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP / 2);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
+        vm.stopPrank();
+
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP / 2), user2, user2, ""); // exactly the new cap
+        assertEq(hook.zkBidTotal(user2, 0), ZK_CAP / 2, "fresh wallet should fill the new cap");
+
+        vm.prank(hook.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UmiaValidationHook.ZkBidExceedsStepCap.selector, user2, 0, ZK_CAP / 2 + 1, ZK_CAP / 2
+            )
+        );
+        hook.validate(0, 1, user2, user2, "");
+    }
+
+    /// A wallet still under the new cap keeps exactly the residual headroom (newCap - used).
+    function test_capRetune_partiallySpentWalletKeepsResidualHeadroom() public {
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP);
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, 300e6, user, user, "");
+
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP / 2); // 500, wallet has spent 300
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
+        vm.stopPrank();
+
+        vm.prank(hook.cca());
+        hook.validate(0, 200e6, user, user, ""); // consumes the exact 200 residual
+        assertEq(hook.zkBidTotal(user, 0), ZK_CAP / 2, "wallet should land exactly on the new cap");
+
+        vm.prank(hook.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(UmiaValidationHook.ZkBidExceedsStepCap.selector, user, 0, ZK_CAP / 2 + 1, ZK_CAP / 2)
+        );
+        hook.validate(0, 1, user, user, "");
+    }
+
+    /// Raising the global cap genuinely reopens the shared pool: a bid that the old global
+    /// cap rejected succeeds after the raise, with the accrued history still counted.
+    function test_capRetune_raisingGlobalCapReopensSharedPool() public {
+        address user2 = makeAddr("user2");
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP); // 2,000
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+        hook.submitProof(user2, 0, _createProofForUser(user2));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, "");
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user2, user2, ""); // global now exactly at 2,000
+
+        address user3 = makeAddr("user3");
+        hook.submitProof(user3, 0, _createProofForUser(user3));
+        vm.prank(hook.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                UmiaValidationHook.ZkBidExceedsGlobalCap.selector, user3, ZK_GLOBAL_CAP + 1, ZK_GLOBAL_CAP
+            )
+        );
+        hook.validate(0, 1, user3, user3, "");
+
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP / 2);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2); // 4,000
+        vm.stopPrank();
+
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP / 2), user3, user3, ""); // fits both new caps
+        assertEq(hook.zkGlobalBidTotal(), ZK_GLOBAL_CAP + ZK_CAP / 2, "global total keeps its history");
+        assertEq(hook.zkBidTotal(user3, 0), ZK_CAP / 2, "fresh wallet fills the new per-wallet cap");
+    }
+
+    /// Ordering guard: the global cap is checked and accrued before the per-wallet cap, so a
+    /// bid rejected by the per-wallet cap must not leave global volume behind.
+    function test_capRetune_stepCapRejectionDoesNotLeakGlobalAccrual() public {
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, "");
+        uint256 globalBefore = hook.zkGlobalBidTotal();
+
+        vm.prank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP / 2);
+
+        vm.prank(hook.cca());
+        vm.expectRevert(
+            abi.encodeWithSelector(UmiaValidationHook.ZkBidExceedsStepCap.selector, user, 0, ZK_CAP + 500e6, ZK_CAP / 2)
+        );
+        hook.validate(0, 500e6, user, user, "");
+        assertEq(hook.zkGlobalBidTotal(), globalBefore, "global total must roll back with the revert");
+    }
+
+    /// Footgun guard: 0 means "no cap", not "blocked". Retuning the per-wallet cap down to 0
+    /// removes the gate entirely and stops accrual, so the global cap becomes the only limit.
+    function test_capRetune_stepCapToZeroRemovesGateAndStopsAccrual() public {
+        vm.startPrank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
+        vm.stopPrank();
+        hook.submitProof(user, 0, _createProofForUser(user));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, "");
+
+        vm.prank(admin);
+        hook.setStepMaxBidAmount(0, 0); // reads as "uncapped", NOT "frozen"
+
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, ""); // formerly capped wallet bids freely
+        assertEq(hook.zkBidTotal(user, 0), ZK_CAP, "an uncapped step stops accruing");
+        assertEq(hook.zkGlobalBidTotal(), ZK_CAP * 2, "the global pool still counts the volume");
+    }
+
+    /// Asymmetry guard: the per-step total only accrues while a cap is set, so introducing a
+    /// per-wallet cap mid-auction grants a full fresh allowance — unlike the global cap, which
+    /// counts volume that landed while it was uncapped.
+    function test_capRetune_introducingStepCapMidAuctionIgnoresPriorVolume() public {
+        vm.prank(admin);
+        hook.setZkGlobalMaxBidAmount(ZK_GLOBAL_CAP * 2);
+        hook.submitProof(user, 0, _createProofForUser(user));
+
+        vm.roll(step0Start);
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, ""); // no per-step cap yet -> no accrual
+        assertEq(hook.zkBidTotal(user, 0), 0, "uncapped step must not accrue");
+        assertEq(hook.zkGlobalBidTotal(), ZK_CAP, "global accrues regardless");
+
+        vm.prank(admin);
+        hook.setStepMaxBidAmount(0, ZK_CAP);
+
+        vm.prank(hook.cca());
+        hook.validate(0, uint128(ZK_CAP), user, user, ""); // full fresh 1,000 despite prior 1,000
+        assertEq(hook.zkBidTotal(user, 0), ZK_CAP, "late cap grants a full allowance");
+        assertEq(hook.zkGlobalBidTotal(), ZK_CAP * 2, "global keeps the running history");
     }
 }
