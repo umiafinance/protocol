@@ -58,6 +58,20 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
     bytes32 public constant SERVER_PERMIT_TYPEHASH =
         keccak256("ServerPermit(address wallet,uint256 step,bytes32 nonce,uint256 deadline,uint128 amount)");
 
+    /// @notice Oldest attestation a proof may carry and still be accepted.
+    /// @dev Reclaim itself binds a proof to a witness epoch, not to a wall-clock deadline, and the
+    ///      per-identifier `_consumedProofs` ledger is per-deployment — so without this bound a claim
+    ///      the attestor signed months ago (or one harvested from another chain's calldata) stays
+    ///      valid forever against a fresh auction. `timestampS` is inside `Claims.serialise`, so it is
+    ///      covered by the witness signatures and cannot be back-dated by the submitter.
+    uint256 public constant PROOF_MAX_AGE = 1 days;
+
+    /// @notice Tolerance for an attestor clock running ahead of this chain's.
+    /// @dev Attestor and chain clocks drift independently; without slack an otherwise valid proof
+    ///      minted seconds ago would revert. Kept far below `PROOF_MAX_AGE` so it cannot be used to
+    ///      widen the acceptance window meaningfully.
+    uint256 public constant PROOF_MAX_CLOCK_SKEW = 15 minutes;
+
     // ─────────────────────────────────────────────────────────
     // Immutables
     // ─────────────────────────────────────────────────────────
@@ -127,6 +141,15 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
     ///         its nonce is burned and the signature cannot be replayed.
     mapping(bytes32 nonce => bool) private _usedPermits;
 
+    /// @notice Proof identifiers this hook has already consumed.
+    /// @dev Deliberately a local ledger rather than `Reclaim.usedProofs`. `Reclaim.verifyProof` is
+    ///      permissionless and burns the identifier in shared state, so any observer could copy a pending
+    ///      proof out of the mempool, burn it there first, and lock the rightful submitter out for good —
+    ///      the identifier carries no nonce, so a fresh attestation of the same identity reproduces the
+    ///      same, already-burned identifier. Keeping consumption local makes that griefing path
+    ///      unreachable while preserving identical replay protection within this hook.
+    mapping(bytes32 identifier => bool) private _consumedProofs;
+
     // ─────────────────────────────────────────────────────────
     // Errors
     // ─────────────────────────────────────────────────────────
@@ -155,8 +178,11 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
     error PriceNotAlignedToTick();
     error IdentityAlreadyClaimed(bytes32 providerHash, bytes32 identityHash, address existingUser);
     error PermitAlreadyUsed(bytes32 nonce);
+    error ProofAlreadyUsed(bytes32 identifier);
     error ZkBidExceedsStepCap(address owner, uint256 stepIndex, uint256 attempted, uint256 cap);
     error ZkBidExceedsGlobalCap(address owner, uint256 attempted, uint256 cap);
+    error ProofExpired(uint256 timestampS, uint256 notAfter);
+    error ProofFromFuture(uint256 timestampS, uint256 notBefore);
 
     // ─────────────────────────────────────────────────────────
     // Events
@@ -351,6 +377,10 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
     function _verifyAndStoreProof(address user, uint256 stepIndex, bytes calldata proofData) internal {
         Reclaim.Proof memory proof = abi.decode(proofData, (Reclaim.Proof));
 
+        // Freshness first: cheapest check, and it must run before the OPRF gate writes
+        // `_identityToUser`, so a stale proof cannot squat an identity it will never be able to use.
+        _requireFreshProof(proof.signedClaim.claim.timestampS);
+
         string memory contextAddress = Claims.extractFieldFromContext(proof.claimInfo.context, '"contextAddress":"');
         address proofUser = StringUtils.str2address(contextAddress);
         if (proofUser != user) revert ContextAddressMismatch(user, proofUser);
@@ -390,7 +420,12 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
             // existingOwner == user → idempotent re-verify, no-op.
         }
 
-        reclaim.verifyProof(proof);
+        // Validate against Reclaim's witness set, but consume the identifier here. See `_consumedProofs`
+        // for why the shared `Reclaim.usedProofs` ledger is not used for replay protection.
+        bytes32 identifier = proof.signedClaim.claim.identifier;
+        if (_consumedProofs[identifier]) revert ProofAlreadyUsed(identifier);
+        reclaim.checkProof(proof);
+        _consumedProofs[identifier] = true;
 
         uint256 newValue = stepIndex + 1;
         uint256 existing = _verifiedFromStep[user];
@@ -399,7 +434,29 @@ contract UmiaValidationHook is IUmiaValidationHook, ValidationHookIntrospection,
         }
 
         emit Registered(stepIndex, user);
-        emit ProofVerified(user, stepIndex, proof.signedClaim.claim.identifier);
+        emit ProofVerified(user, stepIndex, identifier);
+    }
+
+    /// @dev Bounds how far the attestation timestamp may sit from this block. Signed by the witnesses
+    ///      as part of `Claims.serialise`, so the submitter cannot move it; the only thing a submitter
+    ///      controls is *when* they present the proof, which is exactly what this bounds.
+    function _requireFreshProof(uint32 timestampS) internal view {
+        uint256 attested = uint256(timestampS);
+        uint256 now_ = block.timestamp;
+
+        if (attested > now_ + PROOF_MAX_CLOCK_SKEW) {
+            revert ProofFromFuture(attested, now_ + PROOF_MAX_CLOCK_SKEW);
+        }
+        // Underflow-free: on a chain whose timestamp is below PROOF_MAX_AGE (only ever a fresh test
+        // fixture) every non-future proof is trivially fresh, so there is nothing to enforce.
+        if (now_ > PROOF_MAX_AGE && attested < now_ - PROOF_MAX_AGE) {
+            revert ProofExpired(attested, now_ - PROOF_MAX_AGE);
+        }
+    }
+
+    /// @notice Whether this hook has already consumed a given Reclaim proof identifier.
+    function isProofConsumed(bytes32 identifier) external view returns (bool) {
+        return _consumedProofs[identifier];
     }
 
     // ─────────────────────────────────────────────────────────
