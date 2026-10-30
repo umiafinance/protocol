@@ -16,7 +16,7 @@ forge verify-contract "$ADDR" "$FQN" --chain 8453 --compiler-version 0.8.26 \
   "$@" --show-standard-json-input > "$TMP/in.json"
 jq --argjson r "$(jq '.metadata.settings.remappings' "$ART")" \
   '.settings.remappings = $r' "$TMP/in.json" > "$TMP/fixed.json"
-GUID=$(curl -s "https://api.etherscan.io/v2/api?chainid=8453" \
+RESPONSE=$(curl -fsS "https://api.etherscan.io/v2/api?chainid=8453" \
   --data-urlencode "apikey=$ETHERSCAN_API_KEY" \
   --data-urlencode "module=contract" --data-urlencode "action=verifysourcecode" \
   --data-urlencode "contractaddress=$ADDR" \
@@ -24,9 +24,21 @@ GUID=$(curl -s "https://api.etherscan.io/v2/api?chainid=8453" \
   --data-urlencode "contractname=$FQN" \
   --data-urlencode "compilerversion=v0.8.26+commit.8a97fa7a" \
   ${CTOR:+--data-urlencode "constructorArguements=$CTOR"} \
-  --data-urlencode "sourceCode@$TMP/fixed.json" | jq -r '.result')
+  --data-urlencode "sourceCode@$TMP/fixed.json")
+GUID=$(jq -er '.result | select(type == "string" and length > 0)' <<< "$RESPONSE")
+if [ "$(jq -r '.status' <<< "$RESPONSE")" != "1" ]; then
+  echo "Verification submission failed: $GUID" >&2
+  exit 1
+fi
 echo "GUID: $GUID"
 for i in $(seq 1 12); do sleep 10
-  R=$(curl -s "https://api.etherscan.io/v2/api?chainid=8453&module=contract&action=checkverifystatus&guid=$GUID&apikey=$ETHERSCAN_API_KEY" | jq -r '.result')
-  echo "  $R"; case "$R" in *"Pending"*) continue;; *) break;; esac
+  RESPONSE=$(curl -fsS "https://api.etherscan.io/v2/api?chainid=8453&module=contract&action=checkverifystatus&guid=$GUID&apikey=$ETHERSCAN_API_KEY")
+  R=$(jq -er '.result | select(type == "string" and length > 0)' <<< "$RESPONSE")
+  echo "  $R"
+  if [ "$(jq -r '.status' <<< "$RESPONSE")" = "1" ]; then
+    exit 0
+  fi
+  case "$R" in "Pending in queue") continue;; *) exit 1;; esac
 done
+echo "Verification is still pending after 12 checks; retry the status check with GUID $GUID." >&2
+exit 1
