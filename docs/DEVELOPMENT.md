@@ -68,6 +68,13 @@ All of these live at the project root.
 | `verify-fixed.sh <address> <path:Name> [ctor-args-hex] [forge args]` | Verifies a contract on Base (chain id 8453) through the Etherscan v2 API using forge's standard JSON input, with the remappings taken from the deployed artifact's metadata. Forge's own verify path infers an extra `test/=...` remapping that changes the metadata hash and fails the exact-bytecode check | a build in `out/`, `ETHERSCAN_API_KEY`, `jq`, `curl` |
 | `verify-runtime.sh <address> <path:Name> [forge args]` | For contracts created at runtime by another contract or an EOA outside a forge broadcast: fetches the creation transaction, strips the local artifact's creation bytecode off its input to recover the constructor args, then calls `verify-fixed.sh` | same as above |
 
+The verification script has local response tests. They require Bash and `jq`,
+but no API key, deployed contract, Foundry build or network request:
+
+```bash
+bash test/verification/verify-fixed.sh
+```
+
 ## 4) Storage layout snapshots
 
 `.storage-layouts/UmiaHub.json`, `UmiaMarketCore.json` and `Venture.json` are the storage layouts
