@@ -212,7 +212,7 @@ contract SwapGovernanceExecutor is Script {
             "   calldata:",
             vm.toString(abi.encodeCall(timelock.schedule, (plan.hub, 0, plan.data, bytes32(0), salt, minDelay)))
         );
-        console.log("2. anyone -> timelock.execute once ready");
+        console.log("2. executor (the Safe) -> timelock.execute once ready");
         console.log(
             "   calldata:", vm.toString(abi.encodeCall(timelock.execute, (plan.hub, 0, plan.data, bytes32(0), salt)))
         );

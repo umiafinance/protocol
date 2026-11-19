@@ -9,7 +9,11 @@ CCA validation hook that restricts bidding to verified users during auction step
 1. **zkTLS proof**: registers the wallet on an ordinary proof-gated step, or authorizes this one bid on a step that verifies every bid.
 2. **Server permit (EIP-712)**: Server signs a single-use permit for `(wallet, step, nonce, deadline, amount)`, submitted inline in `hookData`; the signature covers the bid amount, so a permit only authorizes the exact amount the server approved.
 
-Registration is monotonic across ordinary steps with a zkTLS proof gate: a user verified at step N can use that proof on later proof-gated steps. A later permit-only step still requires a fresh server permit for every bid, even from a previously verified user. Steps set to verify every bid (`setVerifyEveryBid(step, true)`) ignore that registration and require a current-step credential on every bid. A step with neither gate is open. Permit-only and open bids do not accrue toward the zkTLS bid caps.
+Registration is monotonic across ordinary steps with a zkTLS proof gate: a user verified at step N can use that proof on later proof-gated steps. A later permit-only step still requires a fresh server permit for every bid, even from a previously verified user. Steps set to verify every bid (`setVerifyEveryBid(step, true)`) ignore that registration and require a current-step credential on every bid. An ordinary step with neither gate is open. Permit-authorized and open bids do not accrue toward the zkTLS bid caps.
+
+On a mixed proof/permit step, explicit `0x01` permit hook data takes precedence over standing zkTLS registration. The hook validates the permit envelope, signer, wallet, exact amount, step, deadline and unused nonce, then emits `PermitConsumed` without changing either zkTLS counter or emitting `ZkGlobalBidAccrued`. An invalid explicit permit reverts; it never falls back to standing registration. Empty hook data still uses standing registration and enforces both zkTLS caps. This routing applies only when the current step permits server permits, after public/closed gate handling. Ordinary credentials can serve a later ordinary step; a credential from or for a verify-every-bid step must match the current step. The permit's own step must still permit server permits.
+
+Pass uses the same ordinary server permit. Pass and ordinary server-permit allowances remain separate offchain ledgers; this hook adds no onchain permit cap or credential-route lock.
 
 ## Verify every bid
 
@@ -45,6 +49,12 @@ Changing a step's gate does not revoke permits already signed for it; those expi
 Permissionless relaying still allows someone to copy and **fund the full authorized bid amount for the same owner**, consuming that bid credential and potentially the owner's quota. These protections prevent proof-only consumption attacks; they do not guarantee transaction ordering in a public mempool.
 
 Hooks are not upgradeable and the CCA stores its hook immutably, so a capability added to the hook only exists on newly deployed hook/auction pairs; a live auction cannot be retrofitted.
+
+### Compatibility with existing auctions
+
+The explicit-permit routing fix ([#3159](https://github.com/umiafinance/umia/issues/3159)) requires a new hook/auction pair. Existing ordinary mixed-step hooks may ignore a supplied permit after standing registration, charge zkTLS counters and leave the permit nonce unused. Deploying a new verifier or updating the API does not alter that behavior. This fix changes no ABI or ERC-165 interface ID, so interface support alone cannot distinguish fixed hooks; establish support from the deployed bytecode and deployment provenance before relying on the new routing.
+
+The Hub/API allows selecting either route for each bid without a first-bid lock. Auctions offering switching after registration must deploy the fixed hook; updating the app alone does not fix older hooks. For existing hooks that support it, configuring a mixed step to verify every bid keeps every bid on the credential path: proofs must be fresh and still enforce zkTLS caps, while permits are consumed without zkTLS accrual. This is an optional configuration, not a migration of a live ordinary step; normal early bidding continues to reuse standing registration with `verifyEveryBid = false`. Already deployed auctions retain their existing configuration and behavior until an operator explicitly changes supported settings or creates a new pair.
 
 ## Lifecycle
 

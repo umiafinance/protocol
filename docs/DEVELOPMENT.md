@@ -6,11 +6,19 @@ This guide is for contributors working in this Foundry project.
 
 - [Foundry](https://book.getfoundry.sh/getting-started/installation). `foundry.toml` pins
   `solc = "0.8.26"` and builds with `via-ir`, so the first build is slow.
-- Git, with the submodules under `lib/` initialized:
+- Git, with the pinned contract dependencies initialized. From the Umia monorepo root:
 
 ```bash
-git submodule update --init --recursive
+bash scripts/init-contract-deps.sh
+cd smart-contracts
 ```
+
+The helper checks out only the required nested libraries; recursive installation also
+fetches upstream test dependencies and extra versions of `forge-std`. Explicit contextual
+remappings keep v4-core and Permit2 helpers on our top-level `forge-std`, including on
+Foundry 1.9.0. CI remains pinned to Foundry 1.7.1; an upgrade is not required for this fix.
+Both use the pinned solc compiler; Solar is opt-in via `just forge-solar` in the monorepo.
+Use CI's pinned version for `forge fmt`; 1.9.0 formats some expressions differently.
 
 Optional: Anvil for the local Uniswap v4 bootstrap (`script/DeployV4Infra.s.sol`), `bun` for the
 ABI package, `jq` and `curl` for the verification helpers.

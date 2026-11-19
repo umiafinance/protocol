@@ -12,12 +12,17 @@ ignored_warnings_from = ["lib/"]
 # Upgrade scripts read build artifacts to resolve linked library addresses.
 fs_permissions = [
     { access = "read", path = "./out" },
+    { access = "read", path = "./out-solar" },
     { access = "read", path = "../contracts.json" },
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
 
 remappings = [
+    # Foundry >= 1.8 auto-detects nested forge-std copies. These helpers are inherited
+    # by our tests, so they must share our top-level Test/Script base contracts.
+    'lib/v4-core/:forge-std/=lib/forge-std/src/',
+    'lib/v4-periphery/lib/permit2/:forge-std/=lib/forge-std/src/',
     '@openzeppelin/=lib/openzeppelin-contracts/',
     '@solady=lib/solady/src/',
     '@liquidity-launcher/=lib/liquidity-launcher/src/',

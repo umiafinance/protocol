@@ -24,7 +24,6 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
         super.setUp();
 
         vm.etch(ARB_SYS, address(new MockArbSys()).code);
-        vm.chainId(_chainId());
         _setArbBlockNumber(ARB_BLOCK_START);
 
         lbpBlocks = LBPBlockConfig({
@@ -42,10 +41,6 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
 
     function _setArbBlockNumber(uint256 value) internal {
         MockArbSys(ARB_SYS).setArbBlockNumber(value);
-    }
-
-    function _chainId() internal pure virtual returns (uint256) {
-        return 42_161;
     }
 
     function test_migrateAndSweep_followTheAuctionBlockDomain() public {
@@ -81,13 +76,5 @@ contract UmiaLBPArbitrumDomainTest is DecisionMarketBase {
         _setArbBlockNumber(sweepWindow);
         ventureLbp.sweepToken();
         ventureLbp.sweepCurrency();
-    }
-}
-
-/// @notice The same real CCA -> LBP lifecycle must work on an Orbit chain without
-///         an explicit chain-ID branch in BlockNumberish.
-contract UmiaLBPRobinhoodDomainTest is UmiaLBPArbitrumDomainTest {
-    function _chainId() internal pure override returns (uint256) {
-        return 46_630;
     }
 }

@@ -22,8 +22,7 @@ import {UmiaValidationHookBase, MockCCA, StaleMockCCA} from "./UmiaValidationHoo
 contract UmiaValidationHookTest is UmiaValidationHookBase {
     // ============ Pre-verification Flow ============
 
-    function test_validate_robinhoodGateUsesL2Block() public {
-        vm.chainId(46_630);
+    function test_validate_arbSysGateUsesL2Block() public {
         address arbSys = address(100);
         vm.etch(arbSys, address(new MockArbSys()).code);
         MockArbSys(arbSys).setArbBlockNumber(step0Start);
@@ -1234,6 +1233,7 @@ contract UmiaValidationHookTest is UmiaValidationHookBase {
                 && interfaceId != type(IUmiaValidationHook).interfaceId
                 && interfaceId != type(IMaxBidPriceValidationHook).interfaceId
                 && interfaceId != type(IGatedValidationHook).interfaceId
+                && interfaceId != type(IVerifyEveryBidHook).interfaceId
         );
         assertFalse(hook.supportsInterface(interfaceId));
     }

@@ -228,7 +228,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
 
         // Lift the TWAP past the threshold: the price gate is met, the cliff is not.
         _swapSpot(venture, 40_000e6, true);
-        vm.warp(block.timestamp + TWAP_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + TWAP_WINDOW + 1);
         assertGt(_twapPriceX96(venture), adapter.effectiveThreshold(grant, 0), "price gate met before the cliff");
 
         vm.expectRevert(BaseAllocation.MetaVesT_ConditionNotSatisfied.selector);
@@ -250,7 +250,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         // auction clearing price. The migrated pool opens at that clearing price, so the resolved
         // threshold sits above the live TWAP and the gate is genuinely unmet until a real spot move
         // lifts the window average past it.
-        vm.warp(block.timestamp + TWAP_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + TWAP_WINDOW + 1);
         uint160 milestoneThreshold = adapter.effectiveThreshold(allocation, 0);
 
         // ── Stage 3: real price unlock ──
@@ -266,7 +266,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         // (b) Push the SPOT price up by buying venture on the real V4 pool, then warp a full TWAP
         //     window so the higher price dominates the window average and clears the threshold.
         _swapSpot(venture, 40_000e6, true);
-        vm.warp(block.timestamp + TWAP_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + TWAP_WINDOW + 1);
         assertGt(_twapPriceX96(venture), milestoneThreshold, "spot push + warp should lift the TWAP past threshold");
 
         BaseAllocation(allocation).confirmMilestone(0);
@@ -274,7 +274,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         assertEq(BaseAllocation(allocation).milestoneAwardTotal(), awardTotalBefore + AWARD, "award total adds AWARD");
 
         // ── Stage 4: real time-vest ── warp past the stream so it fully vests and unlocks.
-        vm.warp(block.timestamp + STREAM_DURATION + 1);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION + 1);
         assertEq(_expectedStreamVested(), STREAM, "stream fully vested after its duration");
 
         uint256 withdrawable = BaseAllocation(allocation).getAmountWithdrawable();
@@ -298,7 +298,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         // TWAP windows) so the guard's TWAP converges to the new spot before the pull.
         for (uint256 i = 0; i < 60; i++) {
             _swapSpot(venture, 20e6, false);
-            vm.warp(block.timestamp + 60);
+            vm.warp(vm.getBlockTimestamp() + 60);
         }
         address secondGrant = _createGrantViaFutarchy(charlie);
         assertEq(BaseAllocation(secondGrant).grantee(), charlie, "post-launch grant grantee set");
@@ -308,7 +308,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
     /// @dev Real partial time-vest midway through the stream (no milestone), to verify the linear
     ///      schedule independent of the milestone award.
     function test_stage4_partialLinearVesting() public {
-        vm.warp(block.timestamp + STREAM_DURATION / 2);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION / 2);
 
         uint256 withdrawable = BaseAllocation(allocation).getAmountWithdrawable();
         assertEq(withdrawable, _expectedStreamVested(), "midway withdrawable equals the linearly vested stream");
@@ -459,7 +459,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         (BaseAllocation.Allocation memory alloc, BaseAllocation.Milestone[] memory milestones) = _buildGrant();
         address grant = _createGrantViaExecutor(charlie, alloc, milestones, TOTAL);
 
-        vm.warp(block.timestamp + STREAM_DURATION / 4);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION / 4);
         uint256 vested = VestingAllocation(grant).getVestedTokenAmount();
         assertGt(vested, 0, "some of the stream should have vested");
         uint256 treasuryBefore = IERC20(ventureToken).balanceOf(venture);
@@ -484,7 +484,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         address grant =
             _createGrantViaExecutor(charlie, _linearGrant(STREAM), new BaseAllocation.Milestone[](0), STREAM);
 
-        vm.warp(block.timestamp + STREAM_DURATION / 4);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION / 4);
         uint256 clawback = STREAM - VestingAllocation(grant).getVestedTokenAmount();
 
         bytes memory createCalldata =
@@ -516,7 +516,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         Venture(payable(venture))
             .executeCall(ventureToken, 0, abi.encodeCall(IERC20.transfer, (address(adapter), STREAM)));
 
-        vm.warp(block.timestamp + STREAM_DURATION / 4);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION / 4);
         uint256 clawback = STREAM - VestingAllocation(grant).getVestedTokenAmount();
 
         bytes memory tooBig =
@@ -567,7 +567,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         assertEq(IERC20(ventureToken).balanceOf(leaverGrant), TOTAL, "employee grant funded with TOTAL");
 
         // ── 2. They vest a quarter of the stream, then leave ──
-        vm.warp(block.timestamp + STREAM_DURATION / 4);
+        vm.warp(vm.getBlockTimestamp() + STREAM_DURATION / 4);
         uint256 earned = VestingAllocation(leaverGrant).getVestedTokenAmount();
         assertGt(earned, 0, "some of the stream vested before they left");
         uint256 clawback = TOTAL - earned;
@@ -610,7 +610,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         assertEq(IERC20(ventureToken).balanceOf(leaverGrant), 0, "nothing stranded in the terminated grant");
 
         // ── 5. The replacement's fresh ladder is live and genuinely unmet ──
-        vm.warp(block.timestamp + TWAP_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + TWAP_WINDOW + 1);
         uint160 threshold = adapter.effectiveThreshold(replacementGrant, 0);
         assertGt(threshold, 0, "a fresh ladder was registered on the new allocation");
         assertLt(_twapPriceX96(venture), threshold, "precondition: live TWAP below the replacement's threshold");
@@ -619,13 +619,13 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
 
         // ── 6. A real spot move lifts the window average past it, and the milestone confirms ──
         _swapSpot(venture, 40_000e6, true);
-        vm.warp(block.timestamp + TWAP_WINDOW + 1);
+        vm.warp(vm.getBlockTimestamp() + TWAP_WINDOW + 1);
         assertGt(_twapPriceX96(venture), threshold, "spot push clears the replacement's threshold");
         BaseAllocation(replacementGrant).confirmMilestone(0);
         assertEq(BaseAllocation(replacementGrant).milestoneUnlockedTotal(), AWARD, "price milestone unlocked");
 
         // ── 7. The replacement vests out and withdraws real tokens ──
-        vm.warp(block.timestamp + 2 * STREAM_DURATION);
+        vm.warp(vm.getBlockTimestamp() + 2 * STREAM_DURATION);
         uint256 daveWithdrawable = BaseAllocation(replacementGrant).getAmountWithdrawable();
         assertEq(daveWithdrawable, clawback, "replacement can claim the whole recycled grant");
 
@@ -741,7 +741,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         uint256 _marketId = _createGrantMarket(_buildFundingPlan(grantee));
 
         _setupTrader(beneficiary);
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
         vm.prank(beneficiary);
         mm.split(_marketId, 0, 5_000e6);
 
@@ -757,7 +757,7 @@ contract MetaVesTLifecycleTest is MetaVesTTestBase {
         assertEq(mm.winningProposalByMarketId(_marketId).proposalId, grantProposalId, "grant proposal should win");
 
         address predicted = vm.computeCreateAddress(vestingFactory, vm.getNonce(vestingFactory));
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         mm.executeWinningProposal(_marketId);
         return predicted;
     }

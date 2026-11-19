@@ -129,9 +129,8 @@ contract CCAExitHelperTest is Test {
         assertEq(address(helper).balance, 0, "helper never custodies funds");
     }
 
-    function test_exitOutbidBid_robinhoodUsesL2Block() public {
+    function test_exitOutbidBid_arbSysUsesL2Block() public {
         address arbSys = address(100);
-        vm.chainId(46_630);
         vm.etch(arbSys, address(new MockArbSys()).code);
         vm.roll(335_000_000);
         MockArbSys(arbSys).setArbBlockNumber(block.number);
