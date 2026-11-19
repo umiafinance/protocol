@@ -41,7 +41,6 @@ abstract contract UpgradeBase is Script {
     /// @dev ERC-7201 slot of OZ `Initializable`; `_disableInitializers` writes uint64.max there.
     bytes32 internal constant INITIALIZABLE_STORAGE =
         0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;
-    string internal constant MARKET_CORE_ARTIFACT = "out/UmiaMarketCore.sol/UmiaMarketCore.json";
     string internal constant SETTLEMENT_LIB = "src/libraries/SettlementLib.sol:SettlementLib";
     string internal constant MARKET_CREATION_LIB = "src/libraries/MarketCreationLib.sol:MarketCreationLib";
 
@@ -143,8 +142,10 @@ abstract contract UpgradeBase is Script {
 
     /// @notice Addresses of the external libraries linked into a market core implementation.
     function linkedLibraries(address impl) public view returns (address settlementLib, address marketCreationLib) {
-        settlementLib = _linkedLibrary(impl, MARKET_CORE_ARTIFACT, SETTLEMENT_LIB);
-        marketCreationLib = _linkedLibrary(impl, MARKET_CORE_ARTIFACT, MARKET_CREATION_LIB);
+        string memory artifact =
+            string.concat(vm.envOr("FOUNDRY_OUT", string("out")), "/UmiaMarketCore.sol/UmiaMarketCore.json");
+        settlementLib = _linkedLibrary(impl, artifact, SETTLEMENT_LIB);
+        marketCreationLib = _linkedLibrary(impl, artifact, MARKET_CREATION_LIB);
         require(settlementLib != address(0) && marketCreationLib != address(0), "library link not found");
     }
 
@@ -267,7 +268,7 @@ abstract contract UpgradeBase is Script {
             "   calldata:",
             vm.toString(abi.encodeCall(timelock.schedule, (plan.target, 0, plan.data, bytes32(0), plan.salt, minDelay)))
         );
-        console.log("2. anyone -> timelock.execute once ready (isOperationReady(id))");
+        console.log("2. executor (the Safe) -> timelock.execute once ready (isOperationReady(id))");
         console.log("   to:      ", plan.owner);
         console.log(
             "   calldata:",

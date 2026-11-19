@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
+/// @dev Etch at address(100) without vm.chainId: Forge >= 1.8 serves ArbSys natively on Arbitrum
+///      chain IDs, tied to block.number, and that precompile shadows the etched mock.
 contract MockArbSys {
     uint256 internal _arbBlockNumber;
 

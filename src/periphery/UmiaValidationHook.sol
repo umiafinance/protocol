@@ -177,16 +177,18 @@ contract UmiaValidationHook is
         if (access == Access.Open) return;
         if (access == Access.Closed) revert NoGateConfigured(step);
 
+        bool proofGate = gate.providers.length != 0;
+        // An explicit permit takes precedence over standing zkTLS registration.
+        if (hookData.length != 0 && gate.permit && (!proofGate || hookData[0] == 0x01)) {
+            _validatePermit(gate.everyBid, step, owner, amount, hookData);
+            return;
+        }
+
         if (access == Access.Credential) {
-            bool proofGate = gate.providers.length != 0;
             if (hookData.length == 0) {
                 if (!proofGate) revert ServerPermitRequired(step);
                 if (!gate.permit) revert ProofRequired(step);
                 revert NotVerified(owner);
-            }
-            if (gate.permit && (!proofGate || hookData[0] == 0x01)) {
-                _validatePermit(gate.everyBid, step, owner, amount, hookData);
-                return;
             }
             _validateProof(gate.everyBid, step, owner, amount, hookData);
         }

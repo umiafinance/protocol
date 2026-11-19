@@ -62,6 +62,12 @@ Compromise impact: broad protocol control.
 - Executor must match `HUB.governanceExecutor(venture)`.
 - Plan version and action versions are strictly checked.
 
+### UmiaValidationHook
+
+- On a mixed step that enables permits, explicit permit hook data takes precedence over standing zkTLS registration. Invalid permits revert rather than falling back to registration; valid permits consume their nonce and emit `PermitConsumed` without debiting zkTLS caps.
+- The signer remains responsible for Pass/server-permit allowances offchain. The hook enforces the signed wallet, exact amount, step, deadline and nonce; proof-authorized bids retain their onchain step/global caps. A permit flag alone cannot bypass those caps.
+- Public and closed gates are resolved before credential routing. This behavior requires newly deployed hook/auction pairs; existing immutable pairs retain their prior routing. See [compatibility handling](contracts/UmiaValidationHook.md#compatibility-with-existing-auctions).
+
 ### Venture
 
 Privilege tiers:

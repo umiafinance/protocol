@@ -27,14 +27,14 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         Market memory market = _marketById(marketId);
         uint256 proposal1Id = market.proposalIds[1];
 
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
 
         vm.prank(bob);
         mm.split(marketId, 0, 10_000e6);
 
         (int64 cum0Before,,,,,,,) = conditionalMarketOracle.oracleStates(proposal1Id);
 
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
 
         _swapExactIn(bob, proposal1Id, 1_000e6, false);
 
@@ -64,14 +64,14 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         Market memory market = _marketById(marketId);
         uint256 proposal1Id = market.proposalIds[1];
 
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
 
         vm.prank(bob);
         mm.split(marketId, 0, 50_000e6);
 
         _swapExactIn(bob, proposal1Id, 1_000e6, false);
 
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         uint256 twap2 = mm.getProposalTWAP(proposal1Id);
 
         assertGt(twap2, 0, "TWAP should be positive after trading");
@@ -80,7 +80,7 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
 
         uint256 twap3 = mm.getProposalTWAP(proposal1Id);
 
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         uint256 twap4 = mm.getProposalTWAP(proposal1Id);
 
         assertGt(twap4, twap3, "TWAP should drift towards current price over time");
@@ -93,14 +93,14 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         Market memory market = _marketById(marketId);
         uint256 proposal1Id = market.proposalIds[1];
 
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
 
         vm.prank(bob);
         mm.split(marketId, 0, 50_000e6);
 
         _swapExactIn(bob, proposal1Id, 20_000e6, false);
 
-        vm.warp(block.timestamp + 2 days);
+        vm.warp(vm.getBlockTimestamp() + 2 days);
 
         vm.warp(market.tradingEnd + 1);
         mm.settleMarket(marketId);
@@ -117,24 +117,24 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         Market memory market = _marketById(marketId);
         uint256 proposal1Id = market.proposalIds[1];
 
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
 
         vm.prank(bob);
         mm.split(marketId, 0, 50_000e6);
 
         _swapExactIn(bob, proposal1Id, 100e6, false);
 
-        vm.warp(block.timestamp + 2 hours);
+        vm.warp(vm.getBlockTimestamp() + 2 hours);
         uint256 twapBaseline = mm.getProposalTWAP(proposal1Id);
 
         _swapExactIn(bob, proposal1Id, 20_000e6, false);
 
-        vm.warp(block.timestamp + 1 minutes);
+        vm.warp(vm.getBlockTimestamp() + 1 minutes);
         uint256 twapBriefSpike = mm.getProposalTWAP(proposal1Id);
 
         assertGt(twapBriefSpike, twapBaseline, "TWAP should increase slightly after spike");
 
-        vm.warp(block.timestamp + 1 hours);
+        vm.warp(vm.getBlockTimestamp() + 1 hours);
         uint256 twapAfterHour = mm.getProposalTWAP(proposal1Id);
 
         assertGt(twapAfterHour, twapBriefSpike, "TWAP should continue increasing as spike price accumulates weight");
@@ -166,7 +166,7 @@ contract DecisionMarketTWAPTest is DecisionMarketBase {
         uint256 proposal1Id = market.proposalIds[1];
         uint256 noopId = market.proposalIds[0];
 
-        vm.warp(block.timestamp + 1 days + 1);
+        vm.warp(vm.getBlockTimestamp() + 1 days + 1);
 
         vm.prank(bob);
         mm.split(marketId, 0, 10_000e6);

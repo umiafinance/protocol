@@ -186,7 +186,7 @@
         "spotMigrator": "0x784d8B26A6889e92Bf9074DDC318894d889431c2",
         "governanceExecutor": "0x0Ba8b80Cc8B7E9804860f4D67b2E8051d1FD7E01",
         "marketStake": "0x1819093Ec7376384A659e1c4976CDbc52F5564b9",
-        "zktlsVerifier": "0x5fB707cE85dc071d7c8B2cB31ab415962B1e1385",
+        "zktlsVerifier": "0x63E2a4d4b61eb12e40930e01fD2Af451b9382797",
         "hook": "0x128BedebaA9304Db74726efba848A98E7fB53A80",
         "hookV2": "0xbEA11B032BfB6D7E20b9FD975C0211ad81A03A80",
         "metavestFactory": "0x2b4b2B279120eBD02af71d537d9479B2d7a12415",
@@ -227,9 +227,9 @@
         "lbpFactoryV2": "0x79B4c67E3087FFb469E8E6886FE5326953B57dBb",
         "spotLiquidityV2Code": "0x0a2eEB1ccC57E1876DcF7ee13EA33d1aC1fFAA53",
         "spotMigrator": "0x9DfbAB968BBB210558A9bf64810EE449921762e4",
-        "governanceExecutor": "0xBc35cB6cCc4BE46AA491960EBf5281cD5310c653",
+        "governanceExecutor": "0x77e8394545de5E0148926407418328C10Fb6e7ed",
         "marketStake": "0x55975E430Cc54C63dff03B1E6d27Be574Ce229F6",
-        "zktlsVerifier": "0x357a0112f514f31C41dE39954434a5264Fd854dA",
+        "zktlsVerifier": "0xAbbFa7b430d51B11Fd91a677635Cb6D401f0b5A9",
         "hook": "0x128BedebaA9304Db74726efba848A98E7fB53A80",
         "hookV2": "0xbEA11B032BfB6D7E20b9FD975C0211ad81A03A80",
         "metavestFactory": "0xB9E10A702F58820AEd5698f67Ef65a4fd7bf6244",
@@ -246,7 +246,8 @@
         "universalRouter": "0x204faca1764b154221e35c0d20abb3c525710498"
       },
       "moneyToken": "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168",
-      "moneyTokenDecimals": 6
+      "moneyTokenDecimals": 6,
+      "timelock": "0xD0193fFAF565B6E530C1a6bbBb2FB13243f29177"
     }
   }
 }
