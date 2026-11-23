@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script, console} from "forge-std/Script.sol";
-import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
+import {console} from "forge-std/Script.sol";
 
+import {OwnerHandoff} from "./OwnerHandoff.sol";
 import {ProtocolState} from "./ProtocolState.sol";
 import {GovernanceExecutor} from "../src/core/GovernanceExecutor.sol";
 import {IGovernanceExecutor} from "../src/interfaces/IGovernanceExecutor.sol";
@@ -25,7 +25,7 @@ import {IVenture} from "../src/interfaces/IVenture.sol";
 ///         Environment: UMIA_ENV, UMIA_CHAIN, EXECUTE_UPGRADE (default false), and either
 ///         DEPLOYER_PRIVATE_KEY or a hardware wallet via forge's --ledger/--trezor flags with
 ///         DEPLOYER_ADDRESS set to the signer.
-contract SwapGovernanceExecutor is Script {
+contract SwapGovernanceExecutor is OwnerHandoff {
     struct SwapConfig {
         uint256 deployerKey;
         IUmiaHub hub;
@@ -90,23 +90,12 @@ contract SwapGovernanceExecutor is Script {
             plan.executed = true;
             console.log("swap executed; default executor:", plan.newExecutor);
         } else {
-            _logHandoff(plan);
+            _logOwnerCall(plan.hub, plan.owner, plan.data, keccak256(abi.encodePacked(plan.hub, plan.newExecutor)));
         }
 
         console.log("\n== Record in contracts.json[env][chain].umia ==");
         console.log("governanceExecutor:", plan.newExecutor);
         console.log("indexer: keep", plan.previousExecutor, "listed next to the new address so history stays indexed");
-    }
-
-    /// @dev A zero key means hardware-wallet mode: the CLI wallet flags carry the signer.
-    function _deployer(uint256 deployerKey) internal returns (address) {
-        if (deployerKey != 0) return vm.addr(deployerKey);
-        return vm.envAddress("DEPLOYER_ADDRESS");
-    }
-
-    function _startBroadcast(uint256 deployerKey) internal {
-        if (deployerKey != 0) vm.startBroadcast(deployerKey);
-        else vm.startBroadcast();
     }
 
     function _rehearse(IUmiaHub hub, Plan memory plan) internal returns (uint256 ventures, uint256 pending) {
@@ -174,47 +163,5 @@ contract SwapGovernanceExecutor is Script {
                 pending++;
             }
         }
-    }
-
-    function _logHandoff(Plan memory plan) internal view {
-        console.log("\n== Owner action required ==");
-        console.log("send to:  ", plan.hub);
-        console.log("from:     ", plan.owner);
-        console.log("calldata: ", vm.toString(plan.data));
-
-        if (plan.owner.code.length == 0) {
-            if (vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0)) != 0) {
-                console.log("owner is an EOA: cast send <send to> <calldata> --private-key <owner key>");
-            } else {
-                string memory hw = vm.envOr("HW_WALLET", string("ledger"));
-                console.log(
-                    string.concat(
-                        "owner is an EOA: cast send <send to> <calldata> --",
-                        hw,
-                        " --mnemonic-index ",
-                        vm.toString(vm.envOr("LEDGER_INDEX", uint256(0)))
-                    )
-                );
-            }
-            return;
-        }
-        (bool isTimelock, bytes memory ret) = plan.owner.staticcall(abi.encodeCall(TimelockController.getMinDelay, ()));
-        if (!isTimelock || ret.length != 32) {
-            console.log("owner is a contract (Safe): submit the calldata above via the transaction builder");
-            return;
-        }
-        TimelockController timelock = TimelockController(payable(plan.owner));
-        bytes32 salt = keccak256(abi.encodePacked(plan.hub, plan.newExecutor));
-        uint256 minDelay = abi.decode(ret, (uint256));
-        console.log("\nowner is a TimelockController; two steps:");
-        console.log("1. proposer -> timelock.schedule, min delay (s):", minDelay);
-        console.log(
-            "   calldata:",
-            vm.toString(abi.encodeCall(timelock.schedule, (plan.hub, 0, plan.data, bytes32(0), salt, minDelay)))
-        );
-        console.log("2. executor (the Safe) -> timelock.execute once ready");
-        console.log(
-            "   calldata:", vm.toString(abi.encodeCall(timelock.execute, (plan.hub, 0, plan.data, bytes32(0), salt)))
-        );
     }
 }

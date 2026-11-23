@@ -24,17 +24,19 @@ import {IUmiaHookV2} from "../interfaces/IUmiaHookV2.sol";
 import {IVenture} from "../interfaces/IVenture.sol";
 
 /// @title SpotMigrator
-/// @notice Moves a venture's spot liquidity from its V1 pool to a new `UmiaHookV2` pool. One passed
-///         decision-market proposal does it, with two actions in one transaction:
+/// @notice Moves a venture's spot liquidity from its V1 pool to a new `UmiaHookV2` pool at this
+///         migrator's `targetFee`. One passed decision-market proposal does it, with two actions in
+///         one transaction:
 ///
 ///           1. CALL oldVault.withdraw(venture's shares, 0, 0, migrator)
 ///           2. CALL migrator.migrate(params)
 ///
 ///         If anything reverts, V1 is untouched and the proposal can be retried.
-/// @dev `prepare` deploys the V2 vault and ALM here, derived from the venture's V1 vault alone,
-///      instead of taking addresses as input. The Hub pointer the migration moves is what the vesting
-///      TWAP condition trusts, so it must only ever point at vault code this contract deployed.
-///      Nothing in `prepare` depends on the caller, so it is permissionless.
+/// @dev `prepare` deploys the V2 vault and ALM here, derived from the venture's V1 vault and
+///      `targetFee` alone, instead of taking addresses as input. The new pool keeps V1's currencies
+///      and tick spacing; its fee is `targetFee`. The Hub pointer the migration moves is what the
+///      vesting TWAP condition trusts, so it must only ever point at vault code this contract
+///      deployed. Nothing in `prepare` depends on the caller, so it is permissionless.
 ///      `migrate` seeds the new pool at V1's exact price, backfills its oracle from V1, and runs only
 ///      while spot sits close to both the 30-minute and 6-hour TWAPs. Otherwise it reverts and the
 ///      keeper retries later.
@@ -62,6 +64,8 @@ contract SpotMigrator {
     uint32 internal constant SEAM_LONG_TWAP_WINDOW = 6 hours;
     /// @dev Max |V1 spot tick - 6-hour TWAP tick| (~3%) at which the migration may run.
     int24 internal constant SEAM_MAX_LONG_TICK_DEVIATION = 300;
+    uint24 internal constant MIN_TARGET_FEE = 100;
+    uint24 internal constant MAX_TARGET_FEE = 10_000;
 
     address public immutable HUB;
     IPoolManager public immutable poolManager;
@@ -70,6 +74,8 @@ contract SpotMigrator {
     ///         factory-deployed LBPs, is what proves a pool belongs to the venture asking.
     address public immutable sourceHook;
     SpotLiquidityV2Code internal immutable code;
+    /// @notice Fee of every V2 pool this migrator creates. The seam bound keeps using the source pool's fee.
+    uint24 public immutable targetFee;
 
     mapping(address venture => Prepared) public prepared;
 
@@ -92,7 +98,8 @@ contract SpotMigrator {
         IPoolManager _poolManager,
         address _hookV2,
         address _sourceHook,
-        SpotLiquidityV2Code _code
+        SpotLiquidityV2Code _code,
+        uint24 _targetFee
     ) {
         if (
             _hub == address(0) || address(_poolManager) == address(0) || _hookV2 == address(0)
@@ -103,15 +110,19 @@ contract SpotMigrator {
         hookV2 = _hookV2;
         sourceHook = _sourceHook;
         code = _code;
+        if (_targetFee < MIN_TARGET_FEE || _targetFee > MAX_TARGET_FEE || _targetFee % 100 != 0) {
+            revert InvalidParams();
+        }
+        targetFee = _targetFee;
     }
 
     /// @notice Deploy the venture's V2 vault and ALM, inert until `migrate`. Permissionless: every
-    ///         parameter comes from the venture's current V1 vault.
+    ///         parameter comes from the venture's current V1 vault, except the fee, which is `targetFee`.
     function prepare(address venture) external returns (address vault, address alm) {
         if (prepared[venture].vault != address(0)) revert AlreadyPrepared();
         (, PoolKey memory oldKey) = _sourcePool(venture);
         (vault, alm) = SpotLiquidityV2Deploy.deploy(
-            code, HUB, venture, address(poolManager), hookV2, oldKey.fee, oldKey.tickSpacing, address(this)
+            code, HUB, venture, address(poolManager), hookV2, targetFee, oldKey.tickSpacing, address(this)
         );
         prepared[venture] = Prepared({vault: vault, alm: alm, migrated: false});
         emit VenturePrepared(venture, vault, alm);
@@ -132,7 +143,7 @@ contract SpotMigrator {
         (uint160 sqrtPriceX96,,,) = poolManager.getSlot0(oldId);
         if (!_seamNearTwap(oldKey)) revert SeamPriceDeviationTooHigh();
 
-        PoolKey memory key = PoolKey(oldKey.currency0, oldKey.currency1, oldKey.fee, oldKey.tickSpacing, IHooks(hookV2));
+        PoolKey memory key = PoolKey(oldKey.currency0, oldKey.currency1, targetFee, oldKey.tickSpacing, IHooks(hookV2));
         IUmiaHookV2(hookV2)
             .registerMigratedPool(
                 key,
@@ -194,7 +205,7 @@ contract SpotMigrator {
     }
 
     /// @dev The proposal's calldata is fixed days before execution and anyone may execute it once
-    ///      due, so the price bound lives here: V1 spot must sit within twice the fee (in ticks) of
+    ///      due, so the price bound lives here: V1 spot must sit within twice V1's fee (in ticks) of
     ///      V1's 30-minute TWAP, so pushing the price there and trading it back costs the fee both
     ///      ways, and within 300 ticks (~3%) of its 6-hour TWAP, so holding the push until
     ///      execution takes hours and the slices it seeds can be off by at most a few fees. False

@@ -6,7 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {PoolKey} from "@uniswap/v4-core/src/types/PoolKey.sol";
-import {PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
+import {PoolId, PoolIdLibrary} from "@uniswap/v4-core/src/types/PoolId.sol";
 import {StateLibrary} from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import {Currency} from "@uniswap/v4-core/src/types/Currency.sol";
 
@@ -33,24 +33,25 @@ import {TickMath} from "@uniswap/v4-core/src/libraries/TickMath.sol";
 
 /// @notice Mainnet acceptance test for #2389: migrate UMIA's spot liquidity to `UmiaHookV2` with a
 ///         single two-action proposal executed through the live GovernanceExecutor, on a Base fork
-///         after staging the Hub upgrade, the V2 hook and the migrator. Runs only with
-///         FORK_RPC_URL set.
+///         after the Hub upgrade, against the deployed V2 hook and vault/ALM creation code, with a
+///         migrator at TARGET_FEE (default 3000). Runs only with FORK_RPC_URL set.
 contract SpotMigrationUmiaForkTest is Test {
     using PoolIdLibrary for PoolKey;
     using StateLibrary for IPoolManager;
 
     IUmiaHub constant HUB = IUmiaHub(0x120dbCDd58Bb787309573e29159fE6D37A1983F6);
     IPoolManager constant POOL_MANAGER = IPoolManager(0x498581fF718922c3f8e6A244956aF099B2652b2b);
-    address constant LBP_FACTORY = 0x8E6A262e4FdfAC98565C08a2aE6fc6D16253Ad1b;
-    address constant HOOK_V2 = address(uint160(0xB0B0 << 20) | 0x3A80);
-    address constant HOOK_OWNER = address(0x0123);
+    address constant HOOK_V2 = 0xbEA11B032BfB6D7E20b9FD975C0211ad81A03A80;
+    SpotLiquidityV2Code constant CODE = SpotLiquidityV2Code(0x86A3Aa31911F87dBF1597B280Eeb0Cf6033e0EE5);
+    bytes32 constant UMIA_V2_POOL_ID_AT_3000 = 0x704d2cff4858cbd6e19e9c81129836e3c226ae30331f637f059c882fa6b38fc5;
     uint32 constant VESTING_WINDOW = 30 days;
     uint256 constant BASE_TX_GAS_CAP = 1 << 24;
-    uint256 constant FORK_BLOCK = 52_250_000;
+    uint256 constant FORK_BLOCK = 59_875_000;
 
     address venture;
     ISpotLiquidityVault oldVault;
     SpotMigrator migrator;
+    uint24 targetFee;
 
     function setUp() public {
         string memory rpc = vm.envOr("FORK_RPC_URL", string(""));
@@ -58,8 +59,9 @@ contract SpotMigrationUmiaForkTest is Test {
             vm.skip(true);
             return;
         }
-        // Pinned: the migration reverts by design whenever UMIA spot is >2% (twice the 1% fee) off its 30-minute TWAP,
-        // so a live-block fork would make this test depend on the market.
+        // Pinned: the migration reverts by design whenever UMIA spot is more than 200 ticks (twice V1's 1% fee)
+        // off its 30-minute TWAP or more than 300 ticks off its 6-hour TWAP, so a live-block fork would make
+        // this test depend on the market.
         vm.createSelectFork(rpc, vm.envOr("FORK_BLOCK", FORK_BLOCK));
 
         venture = _findVenture("UMIA");
@@ -70,12 +72,9 @@ contract SpotMigrationUmiaForkTest is Test {
         vm.prank(hubOwner);
         UUPSUpgradeable(address(HUB)).upgradeToAndCall(hubImpl, "");
 
-        deployCodeTo("UmiaHookV2.sol:UmiaHookV2", abi.encode(HOOK_OWNER), HOOK_V2);
-        vm.prank(HOOK_OWNER);
-        UmiaHookV2(HOOK_V2).initialize(LBP_FACTORY, POOL_MANAGER, address(HUB));
-
+        targetFee = uint24(vm.envOr("TARGET_FEE", uint256(3_000)));
         migrator = new SpotMigrator(
-            address(HUB), POOL_MANAGER, HOOK_V2, address(oldVault.getPoolKey().hooks), new SpotLiquidityV2Code()
+            address(HUB), POOL_MANAGER, HOOK_V2, address(oldVault.getPoolKey().hooks), CODE, targetFee
         );
         vm.prank(hubOwner);
         HUB.setSpotMigrator(address(migrator));
@@ -105,9 +104,14 @@ contract SpotMigrationUmiaForkTest is Test {
         assertEq(HUB.ventureLiquidityVault(venture), newVault);
         assertEq(oldVault.shareBalance(venture), 0);
         PoolKey memory newKey = ISpotLiquidityVault(newVault).getPoolKey();
+        assertEq(newKey.fee, targetFee);
+        assertEq(newKey.tickSpacing, oldKey.tickSpacing);
+        assertEq(address(newKey.hooks), HOOK_V2);
+        if (targetFee == 3_000) assertEq(PoolId.unwrap(newKey.toId()), UMIA_V2_POOL_ID_AT_3000);
+        assertEq(ActiveLiquidityManager(alm).maxTwapDeviationCap(), int24(targetFee / 100));
         (uint160 v2Price,,,) = POOL_MANAGER.getSlot0(newKey.toId());
         assertEq(v2Price, v1Price);
-        assertEq(ActiveLiquidityManager(alm).positions().length, 1);
+        assertEq(ActiveLiquidityManager(alm).positions().length, 2);
         assertEq(IERC20Metadata(IVenture(venture).token()).balanceOf(address(migrator)), 0);
         assertEq(IERC20Metadata(IVenture(venture).moneyToken()).balanceOf(address(migrator)), 0);
 
@@ -299,12 +303,11 @@ contract SpotMigrationUmiaForkTest is Test {
         revert("venture id not found");
     }
 
-    function _params() internal view returns (SpotMigrator.MigrateParams memory p) {
-        int24 spacing = oldVault.getPoolKey().tickSpacing;
+    function _params() internal pure returns (SpotMigrator.MigrateParams memory p) {
         p.anchorBps = 7500;
-        p.activeSlices = new ActiveSlices.Slice[](1);
-        p.activeSlices[0] =
-            ActiveSlices.Slice({tickLowerOffset: -20 * spacing, tickUpperOffset: 21 * spacing, bps: 9000});
+        p.activeSlices = new ActiveSlices.Slice[](2);
+        p.activeSlices[0] = ActiveSlices.Slice({tickLowerOffset: -1200, tickUpperOffset: 1260, bps: 6000});
+        p.activeSlices[1] = ActiveSlices.Slice({tickLowerOffset: -4020, tickUpperOffset: 4080, bps: 4000});
     }
 
     function _payload(uint256 shares, SpotMigrator.MigrateParams memory p) internal view returns (bytes memory) {

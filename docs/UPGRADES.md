@@ -502,20 +502,33 @@ protocol, wired to the existing hub, and touches nothing on the Hub itself. Inpu
 `DEPLOYER_PRIVATE_KEY` (must derive to `UMIA_HOOK_DEPLOYER`), `UMIA_HOOK_DEPLOYER`,
 `UMIA_HOOK_V2_SALT` (mined with `HOOK_V2=true` against this commit's bytecode, see
 [NEW_CHAIN_DEPLOYMENT.md](./NEW_CHAIN_DEPLOYMENT.md#mine-the-umiahookv2-salt)), `POOL_MANAGER`,
-`UMIA_HUB_ADDRESS` and `UMIA_HOOK_ADDRESS` (the live V1 hook). It deploys, in order:
+`UMIA_HUB_ADDRESS`, `UMIA_HOOK_ADDRESS` (the live V1 hook) and `SPOT_MIGRATOR_TARGET_FEE` (the fee
+of the pools the migrator creates, in hundredths of a bip: 3000 is 0.3%; a multiple of 100 from 100
+to 10000). It deploys, in order:
 
 1. `UmiaHookV2` via CreateX
 2. `SpotLiquidityV2Code` (vault and ALM creation code)
 3. `UmiaLBPFactoryV2(poolManager, hookV2, hub, code)`
 4. `hookV2.initialize(factoryV2, poolManager, hub)`
-5. `SpotMigrator(hub, poolManager, hookV2, sourceHook, code)`
+5. `SpotMigrator(hub, poolManager, hookV2, sourceHook, code, targetFee)`
 6. `ConditionalMarketOracle(hub)`
+
+The migrator's fee is immutable. To change it on a staged release, before or after the Hub points
+at the migrator, deploy another one with `script/DeploySpotMigrator.s.sol`: it takes
+`SPOT_MIGRATOR_TARGET_FEE`, reads the staged addresses from `contracts.json` (`UMIA_ENV`,
+`UMIA_CHAIN`) or from `UMIA_HUB_ADDRESS`, `POOL_MANAGER`, `UMIA_HOOK_ADDRESS`,
+`UMIA_HOOK_V2_ADDRESS` and `SPOT_LIQUIDITY_V2_CODE`, checks the V2 hook is wired to that Hub and
+pool manager, and prints the `contracts.json` line and the owner's `setSpotMigrator` calldata. A
+venture already prepared on the old migrator is prepared again on the new one; its old vault and
+ALM stay inert.
 
 Hub owner, in this order:
 
 1. `hub.upgradeToAndCall(newHubImpl, "")`, then `marketCore.upgradeToAndCall(newCoreImpl, "")`.
    Markets created before the MarketCore upgrade get no fee-exempt ALM.
-2. `hub.setConditionalMarketOracle(oracle)` (requires no active markets).
+2. `hub.setConditionalMarketOracle(oracle)`. It reverts `ActiveMarketsPreventUpdate` while any
+   market is unsettled, and a timelock batch reverts as a whole, so a batch that contains this call
+   must execute before the next market opens.
 3. `hub.setDefaultGovernanceExecutor(new GovernanceExecutor(hub))`. The executor shipped with V2
    empties the ALM on `LIQUIDATE_TREASURY`, so it must be live before any ALM holds capital.
 4. `hub.setSpotMigrator(migrator)`.
@@ -526,7 +539,7 @@ Hub owner, in this order:
 7. `hub.setLbpStrategyFactory(factoryV2)`, once off-chain consumers watch the V2 hook. This flips
    new launches to V2; in-flight LBPs from the old factory keep their hook and graduate onto V1.
 
-Per existing venture: `migrator.prepare(venture)` (permissionless, its own transaction, about 7.2M
+Per existing venture: `migrator.prepare(venture)` (permissionless, its own transaction, about 7.6M
 gas), then one decision-market proposal with two `CALL` actions:
 
 ```text

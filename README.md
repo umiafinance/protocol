@@ -108,12 +108,14 @@ Every script reads its inputs from environment variables listed in its header. S
 | `DeployMetaVest.s.sol` | Per-chain MetaVesT vesting singletons and `UmiaTwapMilestoneCondition` ([deployment notes](./docs/metavest/README.md#deployment)) |
 | `DeployOracleUpgrade.s.sol` | Dual-cadence oracle upgrade on a live chain: new `UmiaHook`, `UmiaLBPFactory` and `UmiaTwapMilestoneCondition` wired to the existing Hub; the factory flip stays with the Hub owner |
 | `DeploySpotLiquidityV2.s.sol` | Stages the current spot liquidity contracts next to a live deployment: `UmiaHookV2`, `SpotLiquidityV2Code`, `UmiaLBPFactoryV2`, `SpotMigrator`, `ConditionalMarketOracle`; prints the Hub owner's batch without sending it |
+| `DeploySpotMigrator.s.sol` | Deploys one `SpotMigrator` at a given target fee against an already staged V2 stack, to replace a staged migrator; prints the Hub owner's `setSpotMigrator` calldata without sending it |
 | `DeployTimelock.s.sol` | Deploys an OpenZeppelin `TimelockController` and makes it the Hub owner, optionally the beacon owner too |
 | `DeployYieldPositionGuardian.s.sol` | Deploys a `YieldPositionGuardian` for one venture |
 | `MineUmiaHookSalt.s.sol` | Mines the CreateX salt that gives `UmiaHook`, or `UmiaHookV2` with `HOOK_V2=true`, an address carrying the required V4 permission bits |
 | `SwapGovernanceExecutor.s.sol` | Deploys a new `GovernanceExecutor`, rehearses `setDefaultGovernanceExecutor` in a fork, then sends the swap or prints the owner's calldata |
 | `UpgradeHub.s.sol`, `UpgradeMarketCore.s.sol`, `UpgradeVentureBeacon.s.sol` | `UpgradeBase.s.sol` for each upgradeable target: deploy the implementation, check it is a locked UUPS implementation, rehearse as the live owner, send or print the calldata |
-| `ProtocolState.sol` | Helper, not a script: state digests compared before and after an upgrade, and the Hub lookup the upgrade scripts share (`UMIA_HUB_ADDRESS`, or a `contracts.json` address file one directory up) |
+| `ProtocolState.sol` | Helper, not a script: state digests compared before and after an upgrade, and the address lookup the scripts share (an environment override such as `UMIA_HUB_ADDRESS`, or a `contracts.json` address file one directory up) |
+| `OwnerHandoff.sol` | Helper, not a script: the deployer (key or hardware wallet) and the printed call an owner must send, with the schedule/execute pair for a timelock; base of the upgrade scripts, `SwapGovernanceExecutor` and `DeploySpotMigrator` |
 | `DeployTestnetToken.s.sol` | Testnet only: a mintable ERC-20 standing in for the money token |
 | `DeployV4Infra.s.sol` | Local only: Uniswap V4 PoolManager, PositionManager, StateView, Universal Router and WETH for a fresh dev chain |
 | `testnet-utils/` | Testnet only: open or settle a market atomically when bots have pushed spot off its TWAP |

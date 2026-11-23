@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
+import {SafeCast} from "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import {IPoolManager} from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
 import {HookMiner} from "@uniswap/v4-periphery/src/utils/HookMiner.sol";
 
@@ -23,8 +24,8 @@ uint160 constant UMIA_HOOK_FLAGS = uint160(1 << 13 | 1 << 12 | 1 << 11 | 1 << 9 
 ///           2. SpotLiquidityV2Code (vault + ALM creation code, shared by 3 and 5)
 ///           3. UmiaLBPFactoryV2(poolManager, hookV2, hub, code)
 ///           4. hookV2.initialize(factoryV2, poolManager, hub)
-///           5. SpotMigrator(hub, poolManager, hookV2, sourceHook, code), migrating pools from the
-///              live V1 hook
+///           5. SpotMigrator(hub, poolManager, hookV2, sourceHook, code, targetFee), migrating pools
+///              from the live V1 hook into V2 pools at the target fee
 ///           6. ConditionalMarketOracle(hub), the tick-space settlement oracle
 ///
 ///         Nothing here touches the Hub. The script prints the Hub owner's (timelock's) batch, in
@@ -44,6 +45,9 @@ uint160 constant UMIA_HOOK_FLAGS = uint160(1 << 13 | 1 << 12 | 1 << 11 | 1 << 9 
 ///        POOL_MANAGER          — canonical Uniswap v4 PoolManager on this chain
 ///        UMIA_HUB_ADDRESS      — the live hub proxy
 ///        UMIA_HOOK_ADDRESS     — the live V1 hook whose pools the migrator moves
+///        SPOT_MIGRATOR_TARGET_FEE — fee of the V2 pools the migrator creates, in hundredths of a bip
+///                                (3000 = 0.3%): a multiple of 100 from 100 to 10000, or the
+///                                migrator's constructor reverts
 contract DeploySpotLiquidityV2 is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
@@ -52,6 +56,7 @@ contract DeploySpotLiquidityV2 is Script {
         address poolManager = vm.envAddress("POOL_MANAGER");
         address hubAddr = vm.envAddress("UMIA_HUB_ADDRESS");
         address sourceHook = vm.envAddress("UMIA_HOOK_ADDRESS");
+        uint24 targetFee = SafeCast.toUint24(vm.envUint("SPOT_MIGRATOR_TARGET_FEE"));
 
         require(
             vm.addr(deployerPrivateKey) == deployerEOA,
@@ -82,7 +87,8 @@ contract DeploySpotLiquidityV2 is Script {
         SpotLiquidityV2Code code = new SpotLiquidityV2Code();
         UmiaLBPFactoryV2 factory = new UmiaLBPFactoryV2(IPoolManager(poolManager), address(hook), hubAddr, code);
         hook.initialize(address(factory), IPoolManager(poolManager), hubAddr);
-        SpotMigrator migrator = new SpotMigrator(hubAddr, IPoolManager(poolManager), address(hook), sourceHook, code);
+        SpotMigrator migrator =
+            new SpotMigrator(hubAddr, IPoolManager(poolManager), address(hook), sourceHook, code, targetFee);
         ConditionalMarketOracle oracle = new ConditionalMarketOracle(hubAddr);
 
         vm.stopBroadcast();
@@ -91,12 +97,14 @@ contract DeploySpotLiquidityV2 is Script {
         require(hook.hub() == hubAddr, "DeploySpotLiquidityV2: hook.hub mismatch");
         require(factory.umiaHook() == address(hook), "DeploySpotLiquidityV2: factory.umiaHook mismatch");
         require(migrator.hookV2() == address(hook), "DeploySpotLiquidityV2: migrator.hookV2 mismatch");
+        require(migrator.targetFee() == targetFee, "DeploySpotLiquidityV2: migrator.targetFee mismatch");
 
         console.log("\n--- contracts.json ---");
         console.log("umia.hookV2=%s", address(hook));
         console.log("umia.spotLiquidityV2Code=%s", address(code));
         console.log("umia.lbpFactoryV2=%s", address(factory));
         console.log("umia.spotMigrator=%s", address(migrator));
+        console.log("spotMigrator.targetFee=%s", targetFee);
         console.log("umia.conditionalMarketOracle=%s", address(oracle));
 
         console.log("\n--- Hub owner, in order ---");

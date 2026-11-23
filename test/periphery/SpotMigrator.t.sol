@@ -71,6 +71,7 @@ contract SpotMigratorTest is Deployers {
     address constant V1_ADDR = address(uint160(0x1111 << 20) | 0x3A80);
     address constant V2_ADDR = address(uint160(0x2222 << 20) | 0x3A80);
     uint24 constant FEE = 10_000;
+    uint24 constant TARGET_FEE = 3_000;
     int24 constant SPACING = 60;
     uint256 constant T0 = 480_000 hours + 600;
 
@@ -79,6 +80,7 @@ contract SpotMigratorTest is Deployers {
     UmiaHookV2 v2;
     SpotLiquidityVault oldVault;
     SpotMigrator migrator;
+    SpotLiquidityV2Code code;
     PoolKey oldKey;
 
     function setUp() public {
@@ -118,7 +120,16 @@ contract SpotMigratorTest is Deployers {
             _swap(oldKey, i % 2 == 0, -1_000 ether);
         }
 
-        migrator = new SpotMigrator(address(hub), manager, V2_ADDR, V1_ADDR, new SpotLiquidityV2Code());
+        code = new SpotLiquidityV2Code();
+        _useTargetFee(FEE);
+    }
+
+    function _newMigrator(uint24 targetFee) internal returns (SpotMigrator) {
+        return new SpotMigrator(address(hub), manager, V2_ADDR, V1_ADDR, code, targetFee);
+    }
+
+    function _useTargetFee(uint24 targetFee) internal {
+        migrator = _newMigrator(targetFee);
         vm.prank(OWNER);
         hub.setSpotMigrator(address(migrator));
         migrator.prepare(VENTURE);
@@ -335,9 +346,13 @@ contract SpotMigratorTest is Deployers {
     }
 
     function _v1TwapTick(uint32 window) internal view returns (int24) {
+        return _twapTick(V1_ADDR, oldKey, window);
+    }
+
+    function _twapTick(address hook, PoolKey memory key, uint32 window) internal view returns (int24) {
         uint32[] memory s = new uint32[](2);
         s[0] = window;
-        (int48[] memory c,) = IUmiaHook(V1_ADDR).observe(oldKey, s);
+        (int48[] memory c,) = IUmiaHook(hook).observe(key, s);
         return TwapMath.averageTick(c[0], c[1], window);
     }
 
@@ -352,6 +367,142 @@ contract SpotMigratorTest is Deployers {
             PoolSwapTest.TestSettings({takeClaims: false, settleUsingBurn: false}),
             ZERO_BYTES
         );
+    }
+
+    function test_Constructor_RejectsInvalidTargetFee() public {
+        uint24[5] memory invalid = [uint24(0), 99, 150, 10_001, 10_100];
+        for (uint256 i = 0; i < invalid.length; i++) {
+            vm.expectRevert(SpotMigrator.InvalidParams.selector);
+            _newMigrator(invalid[i]);
+        }
+        uint24[3] memory valid = [uint24(100), 3_000, 10_000];
+        for (uint256 i = 0; i < valid.length; i++) {
+            assertEq(_newMigrator(valid[i]).targetFee(), valid[i]);
+        }
+    }
+
+    function test_Prepare_UsesTargetFeeAndSourceSpacing() public {
+        _useTargetFee(TARGET_FEE);
+        (address vault, address alm,) = migrator.prepared(VENTURE);
+
+        PoolKey memory vaultKey = SpotLiquidityVaultV2(vault).getPoolKey();
+        assertEq(vaultKey.fee, TARGET_FEE);
+        assertEq(vaultKey.tickSpacing, SPACING);
+        assertEq(address(vaultKey.hooks), V2_ADDR);
+        PoolKey memory almKey = ActiveLiquidityManager(alm).getPoolKey();
+        assertEq(PoolId.unwrap(almKey.toId()), PoolId.unwrap(vaultKey.toId()));
+        assertEq(almKey.fee, TARGET_FEE);
+        assertEq(almKey.tickSpacing, SPACING);
+
+        assertEq(ActiveLiquidityManager(alm).maxTwapDeviationCap(), 30);
+        assertEq(ActiveLiquidityManager(alm).constraints().maxTwapDeviationTicks, 30);
+    }
+
+    function test_Migrate_EndToEnd_AtTargetFee() public {
+        _useTargetFee(TARGET_FEE);
+        (address newVault, address alm,) = migrator.prepared(VENTURE);
+        (uint160 v1Price,,,) = manager.getSlot0(oldKey.toId());
+
+        PoolId expectedId = PoolKey(oldKey.currency0, oldKey.currency1, TARGET_FEE, SPACING, IHooks(V2_ADDR)).toId();
+        vm.expectEmit(true, true, true, false, V2_ADDR);
+        emit IUmiaHookV2.PoolPredecessorSet(expectedId, V1_ADDR, oldKey.toId(), 0, 0);
+        this.runProposal(_params());
+
+        assertEq(hub.ventureLiquidityVault(VENTURE), newVault);
+        assertEq(oldVault.shareBalance(VENTURE), 0);
+        PoolKey memory newKey = SpotLiquidityVaultV2(newVault).getPoolKey();
+        assertEq(newKey.fee, TARGET_FEE);
+        assertEq(newKey.tickSpacing, SPACING);
+        assertEq(PoolId.unwrap(newKey.toId()), PoolId.unwrap(expectedId));
+        (uint160 v2Price,,,) = manager.getSlot0(newKey.toId());
+        assertEq(v2Price, v1Price);
+
+        IActiveLiquidityManager.Position[] memory positions = ActiveLiquidityManager(alm).positions();
+        assertEq(positions.length, 2);
+        assertGt(positions[0].liquidity, 0);
+        assertGt(positions[1].liquidity, 0);
+        assertGt(SpotLiquidityVaultV2(newVault).shareBalance(VENTURE), 0);
+        assertEq(_token0().balanceOf(address(migrator)), 0);
+        assertEq(_token1().balanceOf(address(migrator)), 0);
+    }
+
+    function test_Migrate_SeamStillUsesSourceFee() public {
+        _useTargetFee(TARGET_FEE);
+        (address newVault,,) = migrator.prepared(VENTURE);
+        int24 sourceBound = int24(uint24(FEE / 50));
+        assertGt(sourceBound - 30, int24(uint24(TARGET_FEE / 50)));
+        int24 twapTick = _v1TwapTick(30 minutes);
+
+        int24[2] memory directions = [int24(1), int24(-1)];
+        for (uint256 i = 0; i < directions.length; i++) {
+            uint256 fresh = vm.snapshotState();
+
+            _moveToTick(oldKey, twapTick + directions[i] * (sourceBound - 30));
+            assertFalse(migrator.seamBlocked(VENTURE));
+            this.runProposal(_params());
+            assertEq(hub.ventureLiquidityVault(VENTURE), newVault);
+            vm.revertToState(fresh);
+
+            _moveToTick(oldKey, twapTick + directions[i] * (sourceBound + 30));
+            assertTrue(migrator.seamBlocked(VENTURE));
+            vm.expectRevert(SpotMigrator.SeamPriceDeviationTooHigh.selector);
+            this.runProposal(_params());
+            assertEq(hub.ventureLiquidityVault(VENTURE), address(oldVault));
+            vm.revertToState(fresh);
+        }
+    }
+
+    function test_Migrate_LongTwapUnchangedAcrossSeam_AtTargetFee() public {
+        _useTargetFee(TARGET_FEE);
+        for (uint256 i = 1; i <= 13; i++) {
+            vm.warp(vm.getBlockTimestamp() + 1 hours);
+            _swap(oldKey, i % 2 == 0, -1_000 ether);
+        }
+        vm.warp(vm.getBlockTimestamp() + 20 minutes);
+        int24 before = _longTwapTick(12 hours);
+
+        this.runProposal(_params());
+
+        assertEq(SpotLiquidityVaultV2(hub.ventureLiquidityVault(VENTURE)).getPoolKey().fee, TARGET_FEE);
+        assertEq(_longTwapTick(12 hours), before);
+    }
+
+    function test_Migrate_AlmRebalanceBandIsTargetFee() public {
+        _useTargetFee(TARGET_FEE);
+        this.runProposal(_params());
+        (, address alm,) = migrator.prepared(VENTURE);
+        PoolKey memory newKey = SpotLiquidityVaultV2(hub.ventureLiquidityVault(VENTURE)).getPoolKey();
+
+        vm.warp(vm.getBlockTimestamp() + 1);
+        _swap(newKey, true, -1 ether);
+        vm.warp(vm.getBlockTimestamp() + 65 minutes);
+        int24 band = int24(uint24(TARGET_FEE / 100));
+        int24 twapTick = _twapTick(V2_ADDR, newKey, 30 minutes);
+        IActiveLiquidityManager.Position[] memory current = ActiveLiquidityManager(alm).positions();
+        address keeper = ActiveLiquidityManager(alm).keeper();
+
+        int24[2] memory directions = [int24(1), int24(-1)];
+        for (uint256 i = 0; i < directions.length; i++) {
+            uint256 warmed = vm.snapshotState();
+
+            _moveToTick(newKey, twapTick + directions[i] * (band - 5));
+            vm.prank(keeper);
+            ActiveLiquidityManager(alm).rebalance(current);
+            vm.revertToState(warmed);
+
+            _moveToTick(newKey, twapTick + directions[i] * (band + 5));
+            vm.prank(keeper);
+            vm.expectRevert(IActiveLiquidityManager.SpotPriceDeviationTooHigh.selector);
+            ActiveLiquidityManager(alm).rebalance(current);
+            vm.revertToState(warmed);
+        }
+    }
+
+    function test_Migrate_SelectorUnchanged() public view {
+        assertEq(SpotMigrator.migrate.selector, bytes4(0x8cb9af0f));
+        assertEq(SpotMigrator.prepare.selector, bytes4(keccak256("prepare(address)")));
+        assertEq(SpotMigrator.seamBlocked.selector, bytes4(keccak256("seamBlocked(address)")));
+        assertEq(migrator.prepared.selector, bytes4(keccak256("prepared(address)")));
     }
 
     /// @notice Migration conserves value and carries the V1 price for both currency orders and
