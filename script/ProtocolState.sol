@@ -24,11 +24,24 @@ library ProtocolState {
 
     /// @dev `UMIA_HUB_ADDRESS` skips the file read, for checkouts without the monorepo's contracts.json.
     function hubFromContractsJson(string memory env, string memory chain) internal view returns (IUmiaHub) {
-        address hubOverride = vm.envOr("UMIA_HUB_ADDRESS", address(0));
-        if (hubOverride != address(0)) return IUmiaHub(hubOverride);
-        require(bytes(env).length != 0 && bytes(chain).length != 0, "set UMIA_ENV and UMIA_CHAIN, or UMIA_HUB_ADDRESS");
+        return IUmiaHub(fromContractsJson("UMIA_HUB_ADDRESS", env, chain, '["umia"]["hub"]'));
+    }
+
+    /// @notice The address at `path` under contracts.json[env][chain], unless `overrideVariable` is set.
+    function fromContractsJson(
+        string memory overrideVariable,
+        string memory env,
+        string memory chain,
+        string memory path
+    ) internal view returns (address) {
+        address fromEnv = vm.envOr(overrideVariable, address(0));
+        if (fromEnv != address(0)) return fromEnv;
+        require(
+            bytes(env).length != 0 && bytes(chain).length != 0,
+            string.concat("set UMIA_ENV and UMIA_CHAIN, or ", overrideVariable)
+        );
         string memory json = vm.readFile("../contracts.json");
-        return IUmiaHub(vm.parseJsonAddress(json, string.concat('$["', env, '"]["', chain, '"]["umia"]["hub"]')));
+        return vm.parseJsonAddress(json, string.concat('$["', env, '"]["', chain, '"]', path));
     }
 
     function implementationOf(address proxy) internal view returns (address) {

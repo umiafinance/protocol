@@ -26,6 +26,11 @@
         "name": "_code",
         "type": "address",
         "internalType": "contract SpotLiquidityV2Code"
+      },
+      {
+        "name": "_targetFee",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "nonpayable"
@@ -205,6 +210,19 @@
         "name": "",
         "type": "address",
         "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "targetFee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint24",
+        "internalType": "uint24"
       }
     ],
     "stateMutability": "view"

@@ -3375,6 +3375,7 @@ export const spotMigratorAbi = [
         internalType: 'contract SpotLiquidityV2Code',
         type: 'address',
       },
+      { name: '_targetFee', internalType: 'uint24', type: 'uint24' },
     ],
     stateMutability: 'nonpayable',
   },
@@ -3467,6 +3468,13 @@ export const spotMigratorAbi = [
     inputs: [],
     name: 'sourceHook',
     outputs: [{ name: '', internalType: 'address', type: 'address' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    inputs: [],
+    name: 'targetFee',
+    outputs: [{ name: '', internalType: 'uint24', type: 'uint24' }],
     stateMutability: 'view',
   },
   {

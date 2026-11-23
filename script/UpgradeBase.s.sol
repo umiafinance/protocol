@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 import {ERC1967Utils} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Utils.sol";
 import {IERC1822Proxiable} from "@openzeppelin/contracts/interfaces/draft-IERC1822.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts/proxy/utils/UUPSUpgradeable.sol";
 import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
-import {TimelockController} from "@openzeppelin/contracts/governance/TimelockController.sol";
 
+import {OwnerHandoff} from "./OwnerHandoff.sol";
 import {ProtocolState} from "./ProtocolState.sol";
 import {IUmiaHub} from "../src/interfaces/IUmiaHub.sol";
 
@@ -31,7 +31,7 @@ import {IUmiaHub} from "../src/interfaces/IUmiaHub.sol";
 ///         - UPGRADE_INIT_DATA       abi-encoded reinitializer call forwarded to upgradeToAndCall
 ///                                   (optional; proxies only, the beacon cannot carry calldata)
 ///         - EXECUTE_UPGRADE         also send the upgrade when the deployer is the owner (default false)
-abstract contract UpgradeBase is Script {
+abstract contract UpgradeBase is OwnerHandoff {
     enum Kind {
         Hub,
         MarketCore,
@@ -123,21 +123,10 @@ abstract contract UpgradeBase is Script {
             plan.executed = true;
             console.log("upgrade executed; live implementation:", plan.newImpl);
         } else {
-            _logHandoff(plan);
+            _logOwnerCall(plan.target, plan.owner, plan.data, plan.salt);
         }
 
         _logBookkeeping(plan);
-    }
-
-    /// @dev A zero key means hardware-wallet mode: the CLI wallet flags carry the signer.
-    function _deployer(uint256 deployerKey) internal returns (address) {
-        if (deployerKey != 0) return vm.addr(deployerKey);
-        return vm.envAddress("DEPLOYER_ADDRESS");
-    }
-
-    function _startBroadcast(uint256 deployerKey) internal {
-        if (deployerKey != 0) vm.startBroadcast(deployerKey);
-        else vm.startBroadcast();
     }
 
     /// @notice Addresses of the external libraries linked into a market core implementation.
@@ -225,64 +214,6 @@ abstract contract UpgradeBase is Script {
 
         vm.revertToState(snapshot);
         console.log("rehearsal: upgrade succeeds as owner, protocol state reads unchanged");
-    }
-
-    // ─────────────────────────────────────────────────────────
-    // Output
-    // ─────────────────────────────────────────────────────────
-
-    function _logHandoff(Plan memory plan) internal view {
-        console.log("\n== Owner action required ==");
-        console.log("send to:  ", plan.target);
-        console.log("from:     ", plan.owner);
-        console.log("calldata: ", vm.toString(plan.data));
-
-        (bool isTimelock, uint256 minDelay) = _timelockDelay(plan.owner);
-        if (!isTimelock) {
-            if (plan.owner.code.length > 0) {
-                console.log("owner is a contract (Safe): submit the calldata above via the transaction builder");
-            } else {
-                if (vm.envOr("DEPLOYER_PRIVATE_KEY", uint256(0)) != 0) {
-                    console.log("owner is an EOA: cast send <send to> <calldata> --private-key <owner key>");
-                } else {
-                    string memory hw = vm.envOr("HW_WALLET", string("ledger"));
-                    console.log(
-                        string.concat(
-                            "owner is an EOA: cast send <send to> <calldata> --",
-                            hw,
-                            " --mnemonic-index ",
-                            vm.toString(vm.envOr("LEDGER_INDEX", uint256(0)))
-                        )
-                    );
-                }
-            }
-            return;
-        }
-
-        TimelockController timelock = TimelockController(payable(plan.owner));
-        bytes32 id = timelock.hashOperation(plan.target, 0, plan.data, bytes32(0), plan.salt);
-        console.log("\nowner is a TimelockController; two steps:");
-        console.log("1. proposer (Safe) -> timelock.schedule, min delay (s):", minDelay);
-        console.log("   to:      ", plan.owner);
-        console.log(
-            "   calldata:",
-            vm.toString(abi.encodeCall(timelock.schedule, (plan.target, 0, plan.data, bytes32(0), plan.salt, minDelay)))
-        );
-        console.log("2. executor (the Safe) -> timelock.execute once ready (isOperationReady(id))");
-        console.log("   to:      ", plan.owner);
-        console.log(
-            "   calldata:",
-            vm.toString(abi.encodeCall(timelock.execute, (plan.target, 0, plan.data, bytes32(0), plan.salt)))
-        );
-        console.log("   operation id:", vm.toString(id));
-        console.log("   salt:        ", vm.toString(plan.salt));
-    }
-
-    function _timelockDelay(address owner) internal view returns (bool isTimelock, uint256 minDelay) {
-        if (owner.code.length == 0) return (false, 0);
-        (bool ok, bytes memory ret) = owner.staticcall(abi.encodeCall(TimelockController.getMinDelay, ()));
-        if (!ok || ret.length != 32) return (false, 0);
-        return (true, abi.decode(ret, (uint256)));
     }
 
     /// @dev Address linked into `impl` for the external library `fqn` ("path:Name"), read from
